@@ -44,6 +44,16 @@ impl Source {
             Source::Manual => "manual",
         }
     }
+
+    pub(crate) fn from_str(value: &str) -> Option<Source> {
+        match value {
+            "remote" => Some(Source::Remote),
+            "disk" => Some(Source::Disk),
+            "bundle" => Some(Source::Bundle),
+            "manual" => Some(Source::Manual),
+            _ => None,
+        }
+    }
 }
 
 /// A rendered prompt.

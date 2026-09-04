@@ -81,8 +81,8 @@ fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
 
     // 4. Monitoring logs are batched; flush before a short-lived process exits.
     if live {
-        let outcome = client.flush()?;
-        println!("sent {} monitoring log(s)", outcome.accepted);
+        let flushed = client.flush()?;
+        println!("sent {} monitoring log(s)", flushed.accepted);
     } else {
         for record in client.captured_logs() {
             println!(

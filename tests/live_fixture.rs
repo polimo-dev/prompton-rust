@@ -1,10 +1,11 @@
 //! The live integration test: the SDK against a running PromptOn server.
 //!
-//! It runs only when `PTN_API_KEY` is set (with `PTN_HOST`, default `http://localhost:4000`), so
-//! `cargo test` stays hermetic everywhere else:
+//! It is ignored by the hermetic test suite and requires `PTN_API_KEY` (with `PTN_HOST`, default
+//! `http://localhost:4000`) when explicitly selected:
 //!
 //! ```sh
-//! PTN_HOST=http://localhost:4000 PTN_API_KEY=ptn_sdkfixture_… cargo test --test live_fixture
+//! PTN_HOST=http://localhost:4000 PTN_API_KEY=ptn_sdkfixture_… \
+//!   cargo test --test live_fixture -- --ignored --nocapture
 //! ```
 //!
 //! The fixture project has three use cases — `greeting` (chat, prompts `default` and `ko`),
@@ -44,20 +45,21 @@ impl HttpClient for Recording {
     }
 }
 
-fn fixture() -> Option<(String, String)> {
+fn fixture() -> (String, String) {
     let key = std::env::var("PTN_API_KEY")
-        .ok()
-        .filter(|key| !key.is_empty())?;
+        .expect("PTN_API_KEY must be set when running the ignored live fixture test");
+    assert!(
+        !key.is_empty(),
+        "PTN_API_KEY must not be empty when running the live fixture test"
+    );
     let host = std::env::var("PTN_HOST").unwrap_or_else(|_| "http://localhost:4000".to_string());
-    Some((host, key))
+    (host, key)
 }
 
 #[test]
+#[ignore = "requires a running PromptOn fixture server"]
 fn against_the_running_fixture_server() {
-    let Some((host, key)) = fixture() else {
-        eprintln!("skipping the live test: PTN_API_KEY is not set");
-        return;
-    };
+    let (host, key) = fixture();
 
     let calls = Arc::new(Mutex::new(Vec::new()));
     let transport = Arc::new(Recording {
@@ -125,7 +127,7 @@ fn against_the_running_fixture_server() {
             status, details, ..
         }) => {
             assert_eq!(status, 404);
-            assert_eq!(details["use_case"], "nope");
+            assert_eq!(details["key"], "nope");
         }
         other => panic!("expected a 404 for an unknown use case, got {other:?}"),
     }
@@ -238,11 +240,11 @@ fn against_the_running_fixture_server() {
     client.log(first.clone()).unwrap();
     client.log(second.clone()).unwrap();
     client.log(third.clone()).unwrap();
-    let outcome = client.flush().expect("the batch is accepted");
-    assert_eq!(outcome.accepted, 3, "{outcome:?}");
+    let flushed = client.flush().expect("the batch is accepted");
+    assert_eq!(flushed.accepted, 3, "{flushed:?}");
     assert_eq!(
-        outcome.rejected, 0,
-        "the server refused a record: {outcome:?}"
+        flushed.rejected, 0,
+        "the server refused a record: {flushed:?}"
     );
 
     client.log(first).unwrap();
@@ -319,6 +321,12 @@ fn same_as_server(client: &Client, use_case: &str, prompt: Option<&str>, variabl
     assert_eq!(
         local.prompt_names, remote.prompt_names,
         "{use_case}: prompt_names"
+    );
+    assert_eq!(remote.key, use_case, "{use_case}: key");
+    assert_eq!(
+        remote.source,
+        prompton::Source::Remote,
+        "{use_case}: source"
     );
     assert_eq!(
         local.prompt_version_id, remote.prompt_version_id,

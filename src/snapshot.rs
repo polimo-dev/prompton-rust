@@ -2,9 +2,8 @@
 //!
 //! One request returns everything live in one environment — every deployment, the prompt versions
 //! and models they pin, and the use case metadata — and the SDK reads it locally. The
-//! SDK reads **schema version 4 only**: a v1/v2/v3 document (a stale disk cache, an old bundle) is
-//! refused and the poller keeps looking for a good one, while a version above 4 is decoded on its
-//! known fields with a warning, because v1 only ever adds fields.
+//! SDK reads **schema version 4 only**: stale disk caches, old bundles, missing versions and future
+//! schema versions are refused, and the poller keeps looking for an exact-v4 document.
 
 use std::collections::BTreeMap;
 
@@ -247,7 +246,7 @@ pub enum DecodeError {
     /// The JSON is not a use-case document.
     #[error("invalid use-case document: {0}")]
     Invalid(String),
-    /// A v1 or v2 document: this SDK reads v4.
+    /// Any document whose schema version is not exactly v4.
     #[error("unsupported use-case document schema_version {0} (this SDK reads {SCHEMA_VERSION})")]
     UnsupportedSchemaVersion(i64),
 }
@@ -267,15 +266,21 @@ impl UseCaseDocument {
             .ok_or_else(|| DecodeError::Invalid("top level must be an object".to_string()))?;
 
         let mut warnings = Vec::new();
-        let schema_version = match map.get("schema_version").and_then(Value::as_i64) {
-            Some(SCHEMA_VERSION) => SCHEMA_VERSION,
-            Some(version) if version > SCHEMA_VERSION => {
-                warnings.push(format!(
-                    "unknown schema_version {version}: decoding the fields this SDK knows"
-                ));
+        let schema_version = match map.get("schema_version") {
+            Some(Value::Number(version)) => {
+                let version = version.as_i64().ok_or_else(|| {
+                    DecodeError::Invalid("schema_version must be an integer".to_string())
+                })?;
+                if version != SCHEMA_VERSION {
+                    return Err(DecodeError::UnsupportedSchemaVersion(version));
+                }
                 version
             }
-            Some(version) => return Err(DecodeError::UnsupportedSchemaVersion(version)),
+            Some(_) => {
+                return Err(DecodeError::Invalid(
+                    "schema_version must be an integer".to_string(),
+                ));
+            }
             None => {
                 return Err(DecodeError::Invalid(
                     "schema_version is required".to_string(),
@@ -574,19 +579,41 @@ mod tests {
     #[test]
     fn refuses_older_schema_versions() {
         let mut value = document();
-        value["schema_version"] = json!(2);
+        value["schema_version"] = json!(3);
         assert_eq!(
             UseCaseDocument::from_value(&value),
-            Err(DecodeError::UnsupportedSchemaVersion(2))
+            Err(DecodeError::UnsupportedSchemaVersion(3))
         );
     }
 
     #[test]
-    fn warns_about_newer_schema_versions() {
+    fn refuses_newer_schema_versions() {
         let mut value = document();
         value["schema_version"] = json!(5);
-        let (doc, warnings) = UseCaseDocument::from_value(&value).unwrap();
-        assert_eq!(doc.schema_version, 5);
-        assert_eq!(warnings.len(), 1);
+        assert_eq!(
+            UseCaseDocument::from_value(&value),
+            Err(DecodeError::UnsupportedSchemaVersion(5))
+        );
+    }
+
+    #[test]
+    fn refuses_missing_or_non_integer_schema_versions() {
+        let mut missing = document();
+        missing.as_object_mut().unwrap().remove("schema_version");
+        assert_eq!(
+            UseCaseDocument::from_value(&missing),
+            Err(DecodeError::Invalid(
+                "schema_version is required".to_string()
+            ))
+        );
+
+        let mut text = document();
+        text["schema_version"] = json!("4");
+        assert_eq!(
+            UseCaseDocument::from_value(&text),
+            Err(DecodeError::Invalid(
+                "schema_version must be an integer".to_string()
+            ))
+        );
     }
 }

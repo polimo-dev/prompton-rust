@@ -266,7 +266,7 @@ fn the_record_builder_matches_the_golden_error_shape() {
                     status: Some(429),
                     message: Some("rate limited by upstream provider".to_string()),
                 },
-                outcome: None,
+                result: None,
                 source: None,
             })
         })

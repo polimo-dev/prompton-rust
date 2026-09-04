@@ -47,12 +47,12 @@
           "prompt": "default",
           "prompt_version_id": "0198f2a1-0000-7000-8000-00000000a001",
           "provider": "openrouter",
-          "source": "remote",
           "sdk": {
             "name": "prompton_sdk",
             "version": "0.2.0"
           },
           "sequence": 1,
+          "source": "remote",
           "started_at": "2026-09-04T09:00:00.000000Z",
           "status": "ok",
           "stop_kind": "stop",
@@ -107,12 +107,12 @@
           "prompt": "default",
           "prompt_version_id": "0198f2a1-0000-7000-8000-00000000a001",
           "provider": "openrouter",
-          "source": "remote",
           "sdk": {
             "name": "prompton_sdk",
             "version": "0.2.0"
           },
           "sequence": 2,
+          "source": "remote",
           "started_at": "2026-09-04T09:00:00.000000Z",
           "status": "error",
           "trace_id": "oban:8843",
@@ -164,11 +164,11 @@
           "prompt": "default",
           "prompt_version_id": "0198f2a1-0000-7000-8000-00000000a001",
           "provider": "openrouter",
-          "source": "remote",
           "sdk": {
             "name": "prompton_sdk",
             "version": "0.2.0"
           },
+          "source": "remote",
           "started_at": "2026-09-04T09:00:00.000000Z",
           "status": "error",
           "stop_kind": "length",
@@ -202,11 +202,11 @@
             "dimensions": 256
           },
           "provider": "openrouter",
-          "source": "disk",
           "sdk": {
             "name": "prompton_sdk",
             "version": "0.2.0"
           },
+          "source": "disk",
           "started_at": "2026-09-04T09:00:00.000000Z",
           "status": "ok",
           "trace_id": "ingest:2026-09-04:batch-7",
@@ -237,11 +237,11 @@
           "prompt": "default",
           "prompt_version_id": "0198f2a1-0000-7000-8000-00000000a003",
           "provider": "openrouter",
-          "source": "bundle",
           "sdk": {
             "name": "prompton_sdk",
             "version": "0.2.0"
           },
+          "source": "bundle",
           "started_at": "2026-09-04T09:00:00.000000Z",
           "status": "ok",
           "stop_kind": "stop",
@@ -301,8 +301,8 @@
       "status",
       "started_at"
     ],
-    "source": "remote | disk | bundle | manual",
     "soft_references": "deployment_id, prompt_version_id and model_id must be a UUID or absent; they are not foreign keys, so a record survives the deletion of what it points at",
+    "source": "remote | disk | bundle | manual",
     "started_at": "ISO8601 with an offset. Rejected when more than 5 minutes in the future or more than 7 days in the past - regenerate this field before replaying these fixtures against a live server",
     "status": "ok | error",
     "stop_kind": "stop | length | tool_call | content_filter | other; derived from finish_reason when absent",
@@ -311,7 +311,7 @@
   },
   "format_version": 1,
   "generated_from": {
-    "commit": "5f04e7e4cfb66d379b2f00eef4cd3fce4ba26a61",
+    "commit": "14d4817832d8a906a461ad708f3245796f6be4b1",
     "language": "elixir",
     "repo": "https://github.com/polimo-dev/prompton-elixir",
     "sdk": "prompton_sdk",
@@ -319,7 +319,7 @@
   },
   "records": [
     {
-      "built_by": "UseCase::track",
+      "built_by": "PromptOnSDK.track/3",
       "description": "A complete successful chat log with usage, cost and output.",
       "name": "chat/success",
       "record": {
@@ -366,12 +366,12 @@
         "prompt": "default",
         "prompt_version_id": "0198f2a1-0000-7000-8000-00000000a001",
         "provider": "openrouter",
-        "source": "remote",
         "sdk": {
           "name": "prompton_sdk",
           "version": "0.2.0"
         },
         "sequence": 1,
+        "source": "remote",
         "started_at": "2026-09-04T09:00:00.000000Z",
         "status": "ok",
         "stop_kind": "stop",
@@ -392,7 +392,7 @@
       }
     },
     {
-      "built_by": "UseCase::track",
+      "built_by": "PromptOnSDK.track/3",
       "description": "The provider call failed. status is error, there is no output or usage, and error.kind is one of the seven canonical kinds.",
       "name": "chat/error_without_output",
       "record": {
@@ -431,12 +431,12 @@
         "prompt": "default",
         "prompt_version_id": "0198f2a1-0000-7000-8000-00000000a001",
         "provider": "openrouter",
-        "source": "remote",
         "sdk": {
           "name": "prompton_sdk",
           "version": "0.2.0"
         },
         "sequence": 2,
+        "source": "remote",
         "started_at": "2026-09-04T09:00:00.000000Z",
         "status": "error",
         "trace_id": "oban:8843",
@@ -451,7 +451,7 @@
       }
     },
     {
-      "built_by": "UseCase::track",
+      "built_by": "PromptOnSDK.track/3",
       "description": "The provider answered but the app could not parse the answer. status is error and the usage and output are still recorded, so the call still counts as spend and as a quality signal.",
       "name": "chat/error_with_usage_preserved",
       "record": {
@@ -493,11 +493,11 @@
         "prompt": "default",
         "prompt_version_id": "0198f2a1-0000-7000-8000-00000000a001",
         "provider": "openrouter",
-        "source": "remote",
         "sdk": {
           "name": "prompton_sdk",
           "version": "0.2.0"
         },
+        "source": "remote",
         "started_at": "2026-09-04T09:00:00.000000Z",
         "status": "error",
         "stop_kind": "length",
@@ -513,7 +513,7 @@
       }
     },
     {
-      "built_by": "UseCase::track",
+      "built_by": "PromptOnSDK.track/3",
       "description": "An embedding log: kind is embedding, there is no prompt or prompt_version_id, the input is text and only input_tokens are reported. source records that the use-case document came from the disk cache.",
       "name": "embedding/success",
       "record": {
@@ -536,11 +536,11 @@
           "dimensions": 256
         },
         "provider": "openrouter",
-        "source": "disk",
         "sdk": {
           "name": "prompton_sdk",
           "version": "0.2.0"
         },
+        "source": "disk",
         "started_at": "2026-09-04T09:00:00.000000Z",
         "status": "ok",
         "trace_id": "ingest:2026-09-04:batch-7",
@@ -576,11 +576,11 @@
         "prompt": "default",
         "prompt_version_id": "0198f2a1-0000-7000-8000-00000000a003",
         "provider": "openrouter",
-        "source": "bundle",
         "sdk": {
           "name": "prompton_sdk",
           "version": "0.2.0"
         },
+        "source": "bundle",
         "started_at": "2026-09-04T09:00:00.000000Z",
         "status": "ok",
         "stop_kind": "stop",

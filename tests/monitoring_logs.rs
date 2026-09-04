@@ -492,7 +492,7 @@ fn a_failed_call_is_logged_with_its_usage_and_the_error_propagates() {
     let failure = resolution
         .track::<String, _>(CallMeta::new(), || {
             Err(
-                CallFailure::new(ErrorKind::Parse, "unexpected end of JSON input").with_outcome(
+                CallFailure::new(ErrorKind::Parse, "unexpected end of JSON input").with_result(
                     Result::text("{\"greeting\":")
                         .with_finish_reason("length")
                         .with_usage(Usage::tokens(38, 512)),

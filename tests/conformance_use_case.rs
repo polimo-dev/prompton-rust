@@ -58,6 +58,12 @@ fn every_use_case_case() {
             continue;
         }
 
+        assert_eq!(resolved.key, expect["key"].as_str().unwrap(), "{name}: key");
+        assert_eq!(
+            resolved.source.as_str(),
+            expect["source"].as_str().unwrap(),
+            "{name}: source"
+        );
         assert_eq!(
             resolved.deployment_id.as_deref(),
             expect["deployment_id"].as_str(),
@@ -166,16 +172,23 @@ fn assert_error(name: &str, error: &Error, expect: &Value) {
         .as_str()
         .unwrap_or_else(|| panic!("{name}: unexpected error {error}"));
     match (expected, error) {
-        ("unknown_use_case", Error::UnknownUseCase(_)) => {}
+        ("unknown_use_case", Error::UnknownUseCase(key)) => {
+            assert_eq!(Some(key.as_str()), expect["key"].as_str(), "{name}: key");
+        }
         ("unresolved", Error::Unresolved(_)) => {}
         (
             "unknown_prompt",
             Error::UnknownPrompt {
+                use_case,
                 prompt,
                 prompt_names,
-                ..
             },
         ) => {
+            assert_eq!(
+                Some(use_case.as_str()),
+                expect["key"].as_str(),
+                "{name}: key"
+            );
             assert_eq!(Some(prompt.as_str()), expect["prompt"].as_str(), "{name}");
             assert_eq!(json!(prompt_names), expect["prompt_names"], "{name}");
         }

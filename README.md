@@ -224,12 +224,13 @@ what the suite proves:
   vocabulary (all seven kinds, both directions on the wire), and against this SDK's own record
   builder.
 
-`tests/live_fixture.rs` runs the same SDK against a real server and is skipped unless
-`PTN_API_KEY` is set:
+`tests/live_fixture.rs` runs the same SDK against a real server. It is ignored by the hermetic
+suite; run it explicitly with the fixture credentials:
 
 ```sh
 cargo test
-PTN_HOST=http://localhost:4000 PTN_API_KEY=ptn_sdkfixture_… cargo test --test live_fixture
+PTN_HOST=http://localhost:4000 PTN_API_KEY=ptn_sdkfixture_… \
+  cargo test --test live_fixture -- --ignored --nocapture
 ```
 
 ## License

@@ -361,7 +361,7 @@ impl LogRecord {
     }
 }
 
-/// What the provider call produced, for the [`crate::Client::track`] wrapper.
+/// What the provider call produced, for the [`crate::UseCase::track`] wrapper.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct Result {
     /// The answer text.
@@ -383,7 +383,7 @@ pub struct Result {
 }
 
 impl Result {
-    /// An outcome carrying only the answer text.
+    /// A provider result carrying only the answer text.
     pub fn text(content: impl Into<String>) -> Result {
         Result {
             content: Some(content.into()),
@@ -591,17 +591,17 @@ pub struct Completion<T> {
     /// Whatever your closure produced.
     pub value: T,
     /// What to record about the call.
-    pub outcome: Result,
+    pub result: Result,
 }
 
 impl<T> Completion<T> {
-    /// Pairs a value with its outcome.
-    pub fn new(value: T, outcome: Result) -> Completion<T> {
-        Completion { value, outcome }
+    /// Pairs a value with its provider result.
+    pub fn new(value: T, result: Result) -> Completion<T> {
+        Completion { value, result }
     }
 }
 
-/// A failed provider call. `outcome` is kept when the provider answered but the app could not use
+/// A failed provider call. `result` is kept when the provider answered but the app could not use
 /// the answer, so a parse failure still counts as spend and as a quality signal.
 #[derive(Debug)]
 pub struct CallFailure {
@@ -609,7 +609,7 @@ pub struct CallFailure {
     pub error: LogError,
     /// What the provider returned before the failure, when anything did. Boxed to keep the error
     /// small enough to return by value without cost.
-    pub outcome: Option<Box<Result>>,
+    pub result: Option<Box<Result>>,
     /// The app's own error, carried through untouched.
     pub source: Option<Box<dyn std::error::Error + Send + Sync>>,
 }
@@ -619,7 +619,7 @@ impl CallFailure {
     pub fn new(kind: ErrorKind, message: impl Into<String>) -> CallFailure {
         CallFailure {
             error: LogError::new(kind, message),
-            outcome: None,
+            result: None,
             source: None,
         }
     }
@@ -628,14 +628,14 @@ impl CallFailure {
     pub fn http(status: u16, message: impl Into<String>) -> CallFailure {
         CallFailure {
             error: LogError::http(status, message),
-            outcome: None,
+            result: None,
             source: None,
         }
     }
 
     /// Keeps the usage and output the provider did return.
-    pub fn with_outcome(mut self, outcome: Result) -> CallFailure {
-        self.outcome = Some(Box::new(outcome));
+    pub fn with_result(mut self, result: Result) -> CallFailure {
+        self.result = Some(Box::new(result));
         self
     }
 

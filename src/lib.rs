@@ -513,7 +513,7 @@ impl Client {
                     &meta,
                     timing,
                     Status::Ok,
-                    Some(&completion.outcome),
+                    Some(&completion.result),
                     None,
                 );
                 self.log_quietly(log);
@@ -525,7 +525,7 @@ impl Client {
                     &meta,
                     timing,
                     Status::Error,
-                    failure.outcome.as_deref(),
+                    failure.result.as_deref(),
                     Some(&failure.error),
                 );
                 self.log_quietly(log);
@@ -745,7 +745,7 @@ impl RemotePromptRequest {
 #[derive(Debug, Clone, PartialEq)]
 pub struct RemotePrompt {
     /// The use case key.
-    pub use_case: String,
+    pub key: String,
     /// Chat, text or embedding.
     pub kind: Kind,
     /// The live deployment's id.
@@ -776,6 +776,8 @@ pub struct RemotePrompt {
     pub text: Option<String>,
     /// Server-side warnings, such as `missing_model: <id>`.
     pub warnings: Vec<String>,
+    /// Which tier the server resolved from.
+    pub source: Source,
     /// The use-case document ETag this answer was resolved from.
     pub etag: Option<String>,
     /// The response as it arrived.
@@ -801,7 +803,7 @@ impl RemotePrompt {
         };
 
         Ok(RemotePrompt {
-            use_case: string("use_case").unwrap_or_default(),
+            key: string("key").unwrap_or_default(),
             kind: object
                 .get("kind")
                 .and_then(Value::as_str)
@@ -862,6 +864,11 @@ impl RemotePrompt {
                         .collect()
                 })
                 .unwrap_or_default(),
+            source: object
+                .get("source")
+                .and_then(Value::as_str)
+                .and_then(Source::from_str)
+                .unwrap_or(Source::Remote),
             etag: string("etag"),
             raw: value,
         })
@@ -874,7 +881,7 @@ impl RemotePrompt {
             Some(messages) => Ok(template::render_messages(messages, &vars, Engine::Liquid)?),
             None => Err(Error::Template(TemplateError::Render(format!(
                 "use case {} has no chat messages to render",
-                self.use_case
+                self.key
             )))),
         }
     }
@@ -886,7 +893,7 @@ impl RemotePrompt {
             Some(text) => Ok(template::render(text, &vars, Engine::Liquid)?),
             None => Err(Error::Template(TemplateError::Render(format!(
                 "use case {} has no text template to render",
-                self.use_case
+                self.key
             )))),
         }
     }

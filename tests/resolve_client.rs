@@ -11,7 +11,7 @@ use support::{StubResponse, StubServer};
 
 fn prompt_body(prompt: &str, content: &str) -> String {
     json!({
-        "use_case": "greeting",
+        "key": "greeting",
         "kind": "chat",
         "deployment": {"id": "0198f2a1-0000-7000-8000-00000000d001", "revision": 3},
         "prompt": prompt,
@@ -24,6 +24,7 @@ fn prompt_body(prompt: &str, content: &str) -> String {
         "prompt_version": {"id": "0198f2a1-0000-7000-8000-00000000a001", "number": 2},
         "messages": [{"role": "user", "content": content}],
         "warnings": [],
+        "source": "remote",
         "etag": "sha256-1111"
     })
     .to_string()
@@ -59,10 +60,12 @@ fn a_variable_less_answer_is_cached_and_rendered_locally() {
     let answer = client
         .prompt_remote(&RemotePromptRequest::new("greeting"))
         .unwrap();
+    assert_eq!(answer.key, "greeting");
     assert_eq!(answer.kind, Kind::Chat);
     assert_eq!(answer.model.as_deref(), Some("openai/gpt-4o-mini"));
     assert_eq!(answer.prompt_names, vec!["default", "ko"]);
     assert_eq!(answer.deployment_revision, Some(3));
+    assert_eq!(answer.source, prompton::Source::Remote);
 
     let rendered = answer.messages(json!({"name": "Ada"})).unwrap();
     assert_eq!(rendered[0].content, "Say hello to Ada.");
