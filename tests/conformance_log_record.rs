@@ -1,15 +1,15 @@
-//! The cross-language monitoring-log shape: every record in `conformance/generation_record.json`.
+//! The cross-language monitoring-log shape: every record in `conformance/log_record.json`.
 //!
 //! These are golden shapes rather than executable cases, so this file checks three things: that
-//! every record round-trips through [`GenerationRecord`] unchanged, that the required fields and
+//! every record round-trips through [`LogRecord`] unchanged, that the required fields and
 //! the UUIDv7 rule hold, and that the SDK's own record builder produces the same shape for the
 //! same inputs.
 
 mod support;
 
 use prompton::{
-    CallMeta, Client, Completion, CostSource, ErrorKind, GenerationError, GenerationRecord,
-    Message, Mode, Outcome, Usage,
+    CallMeta, Client, Completion, CostSource, ErrorKind, LogError, LogRecord, Message, Mode,
+    Result, Usage,
 };
 use serde_json::{json, Map, Value};
 
@@ -30,13 +30,13 @@ fn without_nulls(value: &Value) -> Value {
 
 #[test]
 fn every_golden_record_round_trips() {
-    let data = support::conformance("generation_record.json");
+    let data = support::conformance("log_record.json");
     let records = data["records"].as_array().expect("records");
     assert_eq!(records.len(), 5);
 
     for entry in records {
         let name = entry["name"].as_str().unwrap_or("<unnamed>");
-        let record: GenerationRecord = serde_json::from_value(entry["record"].clone())
+        let record: LogRecord = serde_json::from_value(entry["record"].clone())
             .unwrap_or_else(|error| panic!("{name} does not deserialise: {error}"));
 
         record
@@ -61,7 +61,7 @@ fn every_golden_record_round_trips() {
 /// and the status mapping that picks one.
 #[test]
 fn every_error_kind_matches_the_field_rule() {
-    let data = support::conformance("generation_record.json");
+    let data = support::conformance("log_record.json");
     let rule = data["field_rules"]["error.kind"]
         .as_str()
         .expect("the error.kind rule");
@@ -100,7 +100,7 @@ fn every_error_kind_matches_the_field_rule() {
             .unwrap_or_else(|error| panic!("{wire} must deserialise: {error}"));
         assert_eq!(parsed, *kind);
 
-        let error = GenerationError::new(*kind, "x");
+        let error = LogError::new(*kind, "x");
         assert_eq!(serde_json::to_value(&error).unwrap()["kind"], json!(wire));
     }
 
@@ -109,29 +109,28 @@ fn every_error_kind_matches_the_field_rule() {
     assert_eq!(ErrorKind::from_status(429), ErrorKind::RateLimited);
     assert_eq!(ErrorKind::from_status(503), ErrorKind::Http5xx);
 
-    let mut record =
-        GenerationRecord::new("greeting", "openai/gpt-4o-mini", prompton::Status::Error);
-    record.error = Some(GenerationError::http(503, "upstream is down"));
+    let mut record = LogRecord::new("greeting", "openai/gpt-4o-mini", prompton::Status::Error);
+    record.error = Some(LogError::http(503, "upstream is down"));
     let value = serde_json::to_value(&record).unwrap();
     assert_eq!(value["error"]["kind"], json!("http_5xx"));
     assert_eq!(value["error"]["status"], json!(503));
 }
 
 #[test]
-fn the_batch_envelope_is_one_object_with_a_generations_array() {
-    let data = support::conformance("generation_record.json");
+fn the_batch_envelope_is_one_object_with_a_logs_array() {
+    let data = support::conformance("log_record.json");
     let request = &data["batch_envelope"]["request"];
-    let generations = request["generations"].as_array().expect("generations");
-    assert_eq!(generations.len(), 5);
-    assert!(generations.len() <= prompton::MAX_RECORDS_PER_REQUEST);
+    let logs = request["logs"].as_array().expect("logs");
+    assert_eq!(logs.len(), 5);
+    assert!(logs.len() <= prompton::MAX_RECORDS_PER_REQUEST);
 
-    let envelope = json!({ "generations": generations });
+    let envelope = json!({ "logs": logs });
     assert_eq!(envelope.as_object().unwrap().len(), 1);
 }
 
 #[test]
 fn the_field_rules_hold() {
-    let data = support::conformance("generation_record.json");
+    let data = support::conformance("log_record.json");
     let required: Vec<&str> = data["field_rules"]["required"]
         .as_array()
         .expect("required")
@@ -143,7 +142,7 @@ fn the_field_rules_hold() {
         vec!["id", "use_case", "model", "status", "started_at"]
     );
 
-    let mut record = GenerationRecord::new("greeting", "openai/gpt-4o-mini", prompton::Status::Ok);
+    let mut record = LogRecord::new("greeting", "openai/gpt-4o-mini", prompton::Status::Ok);
     assert!(record.validate().is_ok());
     for blank in ["use_case", "model", "started_at"] {
         let mut broken = record.clone();
@@ -164,7 +163,7 @@ fn the_field_rules_hold() {
 /// The wrapper's own output, for the inputs the `chat/success` fixture was built from.
 #[test]
 fn the_record_builder_matches_the_golden_chat_success_shape() {
-    let data = support::conformance("generation_record.json");
+    let data = support::conformance("log_record.json");
     let golden = data["records"]
         .as_array()
         .unwrap()
@@ -180,13 +179,10 @@ fn the_record_builder_matches_the_golden_chat_success_shape() {
         .build()
         .unwrap();
     client
-        .set_snapshot_as(
-            &support::greeting_snapshot(),
-            prompton::ResolutionSource::Remote,
-        )
+        .set_use_cases_as(&support::greeting_document(), prompton::Source::Remote)
         .unwrap();
 
-    let resolution = client.resolve("greeting").unwrap();
+    let resolution = client.use_case("greeting").unwrap();
     let messages = vec![
         Message::new("system", "You are a friendly greeter. Answer in one line."),
         Message::new("user", "Say hello to Ada."),
@@ -201,7 +197,7 @@ fn the_record_builder_matches_the_golden_chat_success_shape() {
         .context(json!({"language": "en", "plan": "pro"}))
         .metadata(json!({"attempt": 1, "job_id": 8842}));
 
-    let outcome = Outcome::text("Hello, Ada! Lovely to see you.")
+    let outcome = Result::text("Hello, Ada! Lovely to see you.")
         .with_finish_reason("stop")
         .with_usage(
             Usage {
@@ -212,17 +208,15 @@ fn the_record_builder_matches_the_golden_chat_success_shape() {
             }
             .with_cost(0.000112, CostSource::Provider),
         );
-    let outcome = Outcome {
+    let outcome = Result {
         model_used: Some("openai/gpt-4o-mini".to_string()),
         upstream_provider: Some("OpenAI".to_string()),
         is_byok: Some(false),
         ..outcome
     };
 
-    client
-        .with_generation(&resolution, meta, || {
-            Ok(Completion::new((), outcome.clone()))
-        })
+    resolution
+        .track(meta, || Ok(Completion::new((), outcome.clone())))
         .unwrap();
 
     let logged = client.captured_logs();
@@ -235,7 +229,7 @@ fn the_record_builder_matches_the_golden_chat_success_shape() {
 /// The wrapper's output for a failed call, against the `chat/error_without_output` shape.
 #[test]
 fn the_record_builder_matches_the_golden_error_shape() {
-    let data = support::conformance("generation_record.json");
+    let data = support::conformance("log_record.json");
     let golden = data["records"]
         .as_array()
         .unwrap()
@@ -251,12 +245,9 @@ fn the_record_builder_matches_the_golden_error_shape() {
         .build()
         .unwrap();
     client
-        .set_snapshot_as(
-            &support::greeting_snapshot(),
-            prompton::ResolutionSource::Remote,
-        )
+        .set_use_cases_as(&support::greeting_document(), prompton::Source::Remote)
         .unwrap();
-    let resolution = client.resolve("greeting").unwrap();
+    let resolution = client.use_case("greeting").unwrap();
 
     let meta = CallMeta::new()
         .variables(json!({"name": "Ada"}))
@@ -267,10 +258,10 @@ fn the_record_builder_matches_the_golden_error_shape() {
         .trace_id("oban:8843")
         .sequence(2);
 
-    let failure = client
-        .with_generation::<(), _>(&resolution, meta, || {
+    let failure = resolution
+        .track::<(), _>(meta, || {
             Err(prompton::CallFailure {
-                error: GenerationError {
+                error: LogError {
                     kind: ErrorKind::RateLimited,
                     status: Some(429),
                     message: Some("rate limited by upstream provider".to_string()),

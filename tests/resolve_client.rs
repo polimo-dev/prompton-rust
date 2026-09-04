@@ -1,26 +1,26 @@
-//! The `/resolve` client: the simple path, its 10-second cache, and what it does when PromptOn is
-//! rate-limiting or failing.
+//! The remote prompt client: the simple path, its 10-second cache, and what it does when PromptOn
+//! is rate-limiting or failing.
 
 mod support;
 
 use std::time::Duration;
 
-use prompton::{Client, Error, Kind, RemoteResolveRequest};
+use prompton::{Client, Error, Kind, RemotePromptRequest};
 use serde_json::json;
 use support::{StubResponse, StubServer};
 
-fn resolve_body(prompt: &str, content: &str) -> String {
+fn prompt_body(prompt: &str, content: &str) -> String {
     json!({
         "use_case": "greeting",
         "kind": "chat",
         "deployment": {"id": "0198f2a1-0000-7000-8000-00000000d001", "revision": 3},
         "prompt": prompt,
-        "prompts": ["default", "ko"],
+        "prompt_names": ["default", "ko"],
         "model_id": "0198f2a1-0000-7000-8000-00000000e001",
         "model": "openai/gpt-4o-mini",
         "provider": "openrouter",
-        "effective_params": {"max_tokens": 512, "temperature": 0.2},
-        "effective_provider_options": {"only": ["OpenAI"]},
+        "params": {"max_tokens": 512, "temperature": 0.2},
+        "provider_options": {"only": ["OpenAI"]},
         "prompt_version": {"id": "0198f2a1-0000-7000-8000-00000000a001", "number": 2},
         "messages": [{"role": "user", "content": content}],
         "warnings": [],
@@ -46,26 +46,30 @@ fn client_for(server: &StubServer, ttl: Duration) -> Client {
 #[test]
 fn a_variable_less_answer_is_cached_and_rendered_locally() {
     let server = StubServer::start(|request, _| {
-        assert!(request.path.ends_with("/resolve"), "{}", request.path);
+        assert!(
+            request.path.ends_with("/use-cases/greeting/prompt"),
+            "{}",
+            request.path
+        );
         assert_eq!(request.json()["environment"], "production");
-        StubResponse::json(200, resolve_body("default", "Say hello to {{ name }}."))
+        StubResponse::json(200, prompt_body("default", "Say hello to {{ name }}."))
     });
     let client = client_for(&server, Duration::from_secs(60));
 
     let answer = client
-        .resolve_remote(&RemoteResolveRequest::new("greeting"))
+        .prompt_remote(&RemotePromptRequest::new("greeting"))
         .unwrap();
     assert_eq!(answer.kind, Kind::Chat);
     assert_eq!(answer.model.as_deref(), Some("openai/gpt-4o-mini"));
-    assert_eq!(answer.available_prompts, vec!["default", "ko"]);
+    assert_eq!(answer.prompt_names, vec!["default", "ko"]);
     assert_eq!(answer.deployment_revision, Some(3));
 
-    let rendered = answer.render(json!({"name": "Ada"})).unwrap();
-    assert_eq!(rendered.messages().unwrap()[0].content, "Say hello to Ada.");
+    let rendered = answer.messages(json!({"name": "Ada"})).unwrap();
+    assert_eq!(rendered[0].content, "Say hello to Ada.");
 
     for _ in 0..5 {
         client
-            .resolve_remote(&RemoteResolveRequest::new("greeting"))
+            .prompt_remote(&RemotePromptRequest::new("greeting"))
             .unwrap();
     }
     assert_eq!(server.request_count(), 1, "the answer is cached per TTL");
@@ -75,15 +79,13 @@ fn a_variable_less_answer_is_cached_and_rendered_locally() {
 fn a_call_with_variables_is_never_cached() {
     let server = StubServer::start(|request, _| {
         assert_eq!(request.json()["variables"]["name"], "Ada");
-        StubResponse::json(200, resolve_body("default", "Say hello to Ada."))
+        StubResponse::json(200, prompt_body("default", "Say hello to Ada."))
     });
     let client = client_for(&server, Duration::from_secs(60));
 
     for _ in 0..3 {
         let answer = client
-            .resolve_remote(
-                &RemoteResolveRequest::new("greeting").variables(json!({"name": "Ada"})),
-            )
+            .prompt_remote(&RemotePromptRequest::new("greeting").variables(json!({"name": "Ada"})))
             .unwrap();
         assert_eq!(
             answer.messages.as_ref().unwrap()[0].content,
@@ -100,21 +102,21 @@ fn the_prompt_name_is_part_of_the_cache_key() {
             .as_str()
             .unwrap_or("default")
             .to_string();
-        StubResponse::json(200, resolve_body(&prompt, "…"))
+        StubResponse::json(200, prompt_body(&prompt, "…"))
     });
     let client = client_for(&server, Duration::from_secs(60));
 
     client
-        .resolve_remote(&RemoteResolveRequest::new("greeting"))
+        .prompt_remote(&RemotePromptRequest::new("greeting"))
         .unwrap();
     let ko = client
-        .resolve_remote(&RemoteResolveRequest::new("greeting").prompt("ko"))
+        .prompt_remote(&RemotePromptRequest::new("greeting").prompt("ko"))
         .unwrap();
     assert_eq!(ko.prompt.as_deref(), Some("ko"));
     assert_eq!(server.request_count(), 2);
 
     client
-        .resolve_remote(&RemoteResolveRequest::new("greeting").prompt("ko"))
+        .prompt_remote(&RemotePromptRequest::new("greeting").prompt("ko"))
         .unwrap();
     assert_eq!(server.request_count(), 2, "the second ko call is cached");
 }
@@ -123,7 +125,7 @@ fn the_prompt_name_is_part_of_the_cache_key() {
 fn a_rate_limit_or_a_5xx_is_answered_from_the_cache() {
     let server = StubServer::start(|_, index| {
         if index == 0 {
-            StubResponse::json(200, resolve_body("default", "Say hello to {{ name }}."))
+            StubResponse::json(200, prompt_body("default", "Say hello to {{ name }}."))
         } else if index == 1 {
             StubResponse::json(429, r#"{"error":{"code":"rate_limited","message":"slow"}}"#)
         } else {
@@ -136,18 +138,18 @@ fn a_rate_limit_or_a_5xx_is_answered_from_the_cache() {
     let client = client_for(&server, Duration::from_millis(30));
 
     client
-        .resolve_remote(&RemoteResolveRequest::new("greeting"))
+        .prompt_remote(&RemotePromptRequest::new("greeting"))
         .unwrap();
     std::thread::sleep(Duration::from_millis(60));
 
     let after_429 = client
-        .resolve_remote(&RemoteResolveRequest::new("greeting"))
+        .prompt_remote(&RemotePromptRequest::new("greeting"))
         .expect("the cached answer keeps serving");
     assert_eq!(after_429.model.as_deref(), Some("openai/gpt-4o-mini"));
 
     std::thread::sleep(Duration::from_millis(60));
     let after_500 = client
-        .resolve_remote(&RemoteResolveRequest::new("greeting"))
+        .prompt_remote(&RemotePromptRequest::new("greeting"))
         .expect("still serving");
     assert_eq!(after_500.deployment_revision, Some(3));
     assert_eq!(server.request_count(), 3);
@@ -158,12 +160,12 @@ fn a_404_is_reported_with_its_details() {
     let server = StubServer::start(|_, _| {
         StubResponse::json(
             404,
-            r#"{"error":{"code":"not_found","message":"no prompt named \"fr\"","details":{"reason":"unknown_prompt","prompt":"fr","available_prompts":["default","ko"]}}}"#,
+            r#"{"error":{"code":"not_found","message":"no prompt named \"fr\"","details":{"reason":"unknown_prompt","prompt":"fr","prompt_names":["default","ko"]}}}"#,
         )
     });
     let client = client_for(&server, Duration::from_secs(60));
 
-    match client.resolve_remote(&RemoteResolveRequest::new("greeting").prompt("fr")) {
+    match client.prompt_remote(&RemotePromptRequest::new("greeting").prompt("fr")) {
         Err(Error::Http {
             status,
             code,
@@ -173,7 +175,7 @@ fn a_404_is_reported_with_its_details() {
             assert_eq!(status, 404);
             assert_eq!(code.as_deref(), Some("not_found"));
             assert_eq!(details["reason"], "unknown_prompt");
-            assert_eq!(details["available_prompts"], json!(["default", "ko"]));
+            assert_eq!(details["prompt_names"], json!(["default", "ko"]));
         }
         other => panic!("expected a 404, got {other:?}"),
     }
@@ -191,7 +193,7 @@ fn offline_and_test_modes_refuse_to_call_out() {
             .build()
             .unwrap();
         assert!(matches!(
-            client.resolve_remote(&RemoteResolveRequest::new("greeting")),
+            client.prompt_remote(&RemotePromptRequest::new("greeting")),
             Err(Error::RemoteDisabled(_))
         ));
         assert!(matches!(client.refresh(), Err(Error::RemoteDisabled(_))));

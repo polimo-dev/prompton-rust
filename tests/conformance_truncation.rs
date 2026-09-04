@@ -39,14 +39,10 @@ fn every_truncation_case() {
             redact: None,
         };
 
-        let record = case["generation"].as_object().expect("generation").clone();
+        let record = case["log"].as_object().expect("log").clone();
         let actual = apply(record, Some(&policy), &config);
 
-        assert_eq!(
-            Value::Object(actual),
-            case["expect"]["generation"],
-            "{name}"
-        );
+        assert_eq!(Value::Object(actual), case["expect"]["log"], "{name}");
     }
 }
 

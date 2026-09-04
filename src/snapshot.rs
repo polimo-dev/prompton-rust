@@ -1,9 +1,9 @@
-//! The snapshot document: what `GET /api/v1/snapshot?environment=…` returns, decoded.
+//! The use-case document: what `GET /api/v1/use-cases?environment=…` returns, decoded.
 //!
 //! One request returns everything live in one environment — every deployment, the prompt versions
-//! and models they pin, and the use case metadata — and the SDK resolves against it locally. The
-//! SDK reads **schema version 3 only**: a v1/v2 document (a stale disk cache, an old bundle) is
-//! refused and the poller keeps looking for a good one, while a version above 3 is decoded on its
+//! and models they pin, and the use case metadata — and the SDK reads it locally. The
+//! SDK reads **schema version 4 only**: a v1/v2/v3 document (a stale disk cache, an old bundle) is
+//! refused and the poller keeps looking for a good one, while a version above 4 is decoded on its
 //! known fields with a warning, because v1 only ever adds fields.
 
 use std::collections::BTreeMap;
@@ -14,7 +14,7 @@ use serde_json::{Map, Value};
 use crate::template::Engine;
 
 /// The schema version this SDK reads.
-pub const SCHEMA_VERSION: i64 = 3;
+pub const SCHEMA_VERSION: i64 = 4;
 
 /// The default payload cap when a use case carries no `payload_policy`.
 pub const DEFAULT_MAX_BYTES: usize = 262_144;
@@ -103,7 +103,7 @@ pub struct InputVariable {
     pub description: Option<String>,
 }
 
-/// How much of a generation's `input`/`output` may be stored.
+/// How much of a model call's `input`/`output` may be stored.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum PayloadMode {
@@ -115,7 +115,7 @@ pub enum PayloadMode {
     None,
 }
 
-/// The use case's payload storage policy, as the snapshot carries it.
+/// The use case's payload storage policy, as the document carries it.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct PayloadPolicy {
     /// `full`, `hash` or `none`.
@@ -146,10 +146,10 @@ impl Default for PayloadPolicy {
 
 /// One use case: a single LLM call site in the app.
 #[derive(Debug, Clone, PartialEq)]
-pub struct UseCase {
+pub struct UseCaseSpec {
     /// The use case id.
     pub id: Option<String>,
-    /// The use case key (`diary_generation`).
+    /// The use case key (`diary_summary`, for example).
     pub key: String,
     /// Chat, text or embedding.
     pub kind: Kind,
@@ -157,7 +157,7 @@ pub struct UseCase {
     pub input_schema: Vec<InputVariable>,
     /// Parameters every deployment of this use case starts from.
     pub default_params: Map<String, Value>,
-    /// The payload storage policy, when the snapshot carries one.
+    /// The payload storage policy, when the document carries one.
     pub payload_policy: Option<PayloadPolicy>,
 }
 
@@ -219,17 +219,17 @@ pub struct Model {
     pub status: Option<String>,
 }
 
-/// A decoded snapshot document.
+/// A decoded use-case document.
 #[derive(Debug, Clone, PartialEq)]
-pub struct SnapshotDocument {
+pub struct UseCaseDocument {
     /// The document's schema version.
     pub schema_version: i64,
-    /// The project slug the snapshot belongs to.
+    /// The project slug the document belongs to.
     pub project: Option<String>,
-    /// The environment the snapshot belongs to.
+    /// The environment the document belongs to.
     pub environment: Option<String>,
     /// Use cases by key.
-    pub use_cases: BTreeMap<String, UseCase>,
+    pub use_cases: BTreeMap<String, UseCaseSpec>,
     /// Live deployments by use case key.
     pub deployments: BTreeMap<String, Deployment>,
     /// Prompt versions by id.
@@ -238,30 +238,30 @@ pub struct SnapshotDocument {
     pub models: BTreeMap<String, Model>,
 }
 
-/// Why a snapshot document could not be decoded.
+/// Why a use-case document could not be decoded.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum DecodeError {
     /// The bytes are not JSON.
-    #[error("snapshot is not valid JSON: {0}")]
+    #[error("use-case document is not valid JSON: {0}")]
     InvalidJson(String),
-    /// The JSON is not a snapshot document.
-    #[error("invalid snapshot: {0}")]
+    /// The JSON is not a use-case document.
+    #[error("invalid use-case document: {0}")]
     Invalid(String),
-    /// A v1 or v2 document: this SDK reads v3.
-    #[error("unsupported snapshot schema_version {0} (this SDK reads {SCHEMA_VERSION})")]
+    /// A v1 or v2 document: this SDK reads v4.
+    #[error("unsupported use-case document schema_version {0} (this SDK reads {SCHEMA_VERSION})")]
     UnsupportedSchemaVersion(i64),
 }
 
-impl SnapshotDocument {
+impl UseCaseDocument {
     /// Decodes the raw response bytes.
-    pub fn from_json(bytes: &[u8]) -> Result<(SnapshotDocument, Vec<String>), DecodeError> {
+    pub fn from_json(bytes: &[u8]) -> Result<(UseCaseDocument, Vec<String>), DecodeError> {
         let value: Value = serde_json::from_slice(bytes)
             .map_err(|err| DecodeError::InvalidJson(err.to_string()))?;
-        SnapshotDocument::from_value(&value)
+        UseCaseDocument::from_value(&value)
     }
 
     /// Decodes an already-parsed JSON value.
-    pub fn from_value(value: &Value) -> Result<(SnapshotDocument, Vec<String>), DecodeError> {
+    pub fn from_value(value: &Value) -> Result<(UseCaseDocument, Vec<String>), DecodeError> {
         let map = value
             .as_object()
             .ok_or_else(|| DecodeError::Invalid("top level must be an object".to_string()))?;
@@ -347,7 +347,7 @@ impl SnapshotDocument {
         }
 
         Ok((
-            SnapshotDocument {
+            UseCaseDocument {
                 schema_version,
                 project: string_of(map.get("project")),
                 environment: string_of(map.get("environment")),
@@ -374,7 +374,7 @@ impl SnapshotDocument {
     }
 }
 
-fn decode_use_case(key: &str, raw: &Map<String, Value>, warnings: &mut Vec<String>) -> UseCase {
+fn decode_use_case(key: &str, raw: &Map<String, Value>, warnings: &mut Vec<String>) -> UseCaseSpec {
     let mut input_schema = Vec::new();
     if let Some(entries) = raw.get("input_schema").and_then(Value::as_array) {
         for entry in entries {
@@ -393,7 +393,7 @@ fn decode_use_case(key: &str, raw: &Map<String, Value>, warnings: &mut Vec<Strin
         }
     }
 
-    UseCase {
+    UseCaseSpec {
         id: string_of(raw.get("id")),
         key: key.to_string(),
         kind: Kind::from_wire(raw.get("kind").and_then(Value::as_str)),
@@ -520,7 +520,7 @@ mod tests {
 
     fn document() -> Value {
         json!({
-            "schema_version": 3,
+            "schema_version": 4,
             "project": "demo",
             "environment": "production",
             "use_cases": {
@@ -551,8 +551,8 @@ mod tests {
     }
 
     #[test]
-    fn decodes_a_v3_document() {
-        let (doc, warnings) = SnapshotDocument::from_value(&document()).unwrap();
+    fn decodes_a_v4_document() {
+        let (doc, warnings) = UseCaseDocument::from_value(&document()).unwrap();
         assert!(warnings.is_empty());
         assert_eq!(doc.environment.as_deref(), Some("production"));
         assert_eq!(doc.use_cases["greeting"].kind, Kind::Chat);
@@ -576,7 +576,7 @@ mod tests {
         let mut value = document();
         value["schema_version"] = json!(2);
         assert_eq!(
-            SnapshotDocument::from_value(&value),
+            UseCaseDocument::from_value(&value),
             Err(DecodeError::UnsupportedSchemaVersion(2))
         );
     }
@@ -584,9 +584,9 @@ mod tests {
     #[test]
     fn warns_about_newer_schema_versions() {
         let mut value = document();
-        value["schema_version"] = json!(4);
-        let (doc, warnings) = SnapshotDocument::from_value(&value).unwrap();
-        assert_eq!(doc.schema_version, 4);
+        value["schema_version"] = json!(5);
+        let (doc, warnings) = UseCaseDocument::from_value(&value).unwrap();
+        assert_eq!(doc.schema_version, 5);
         assert_eq!(warnings.len(), 1);
     }
 }

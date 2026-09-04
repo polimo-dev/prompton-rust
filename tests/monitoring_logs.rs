@@ -8,8 +8,8 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use prompton::{
-    CallFailure, CallMeta, Client, Completion, ErrorKind, GenerationRecord, LogConfig, Message,
-    Mode, Outcome, Status, Usage,
+    CallFailure, CallMeta, Client, Completion, ErrorKind, LogConfig, LogRecord, Message, Mode,
+    Result, Status, Usage,
 };
 use serde_json::{json, Value};
 use support::{StubResponse, StubServer};
@@ -27,16 +27,16 @@ fn quiet_builder(server: &StubServer) -> prompton::ClientBuilder {
         .log_sink(|_| {})
 }
 
-fn record(use_case: &str) -> GenerationRecord {
-    let mut record = GenerationRecord::new(use_case, "openai/gpt-4o-mini", Status::Ok);
+fn record(use_case: &str) -> LogRecord {
+    let mut record = LogRecord::new(use_case, "openai/gpt-4o-mini", Status::Ok);
     record.latency_ms = Some(12);
     record.input = Some(json!({"text": "hi"}));
     record.output = Some(json!({"content": "hello"}));
     record
 }
 
-fn generations(request: &support::RecordedRequest) -> Vec<Value> {
-    request.json()["generations"]
+fn logs(request: &support::RecordedRequest) -> Vec<Value> {
+    request.json()["logs"]
         .as_array()
         .cloned()
         .unwrap_or_default()
@@ -71,7 +71,7 @@ fn a_batch_is_sent_on_the_size_trigger_with_the_environment_parameter() {
         requests[0].path
     );
     assert_eq!(requests[0].method, "POST");
-    let batch = generations(&requests[0]);
+    let batch = logs(&requests[0]);
     assert_eq!(batch.len(), 3);
     for entry in &batch {
         let id = entry["id"].as_str().unwrap();
@@ -84,7 +84,7 @@ fn a_batch_is_sent_on_the_size_trigger_with_the_environment_parameter() {
 #[test]
 fn flush_sends_everything_and_waits_for_the_answer() {
     let server = StubServer::start(|request, _| {
-        let count = request.json()["generations"].as_array().unwrap().len();
+        let count = request.json()["logs"].as_array().unwrap().len();
         StubResponse::json(
             202,
             format!(r#"{{"accepted":{count},"duplicates":0,"rejected":[]}}"#),
@@ -181,12 +181,12 @@ fn a_429_retries_the_same_batch_with_the_same_ids_after_retry_after() {
 
     let requests = server.requests();
     assert_eq!(requests.len(), 2, "the batch is resent once, not more");
-    let first: Vec<&str> = generations(&requests[0])
+    let first: Vec<&str> = logs(&requests[0])
         .iter()
         .map(|entry| entry["id"].as_str().unwrap())
         .map(|id| Box::leak(id.to_string().into_boxed_str()) as &str)
         .collect();
-    let second: Vec<&str> = generations(&requests[1])
+    let second: Vec<&str> = logs(&requests[1])
         .iter()
         .map(|entry| entry["id"].as_str().unwrap())
         .map(|id| Box::leak(id.to_string().into_boxed_str()) as &str)
@@ -200,7 +200,7 @@ fn a_413_splits_the_batch_in_half() {
     let sizes = Arc::new(Mutex::new(Vec::new()));
     let seen = sizes.clone();
     let server = StubServer::start(move |request, _| {
-        let count = request.json()["generations"].as_array().unwrap().len();
+        let count = request.json()["logs"].as_array().unwrap().len();
         seen.lock().unwrap().push(count);
         if count > 2 {
             StubResponse::json(
@@ -314,7 +314,7 @@ fn the_queue_is_bounded_and_drops_the_oldest() {
     assert_eq!(stats.dropped_oldest, 15);
 
     client.flush().unwrap();
-    let sent = generations(&server.requests()[0]);
+    let sent = logs(&server.requests()[0]);
     assert_eq!(sent.len(), 5);
     assert_eq!(sent[0]["trace_id"], "call-15", "the newest records survive");
 }
@@ -410,12 +410,12 @@ fn test_mode_makes_no_http_calls_and_captures_records() {
         .log_sink(|_| {})
         .build()
         .unwrap();
-    client.set_snapshot(&support::greeting_snapshot()).unwrap();
+    client.set_use_cases(&support::greeting_document()).unwrap();
 
-    let resolution = client.resolve("greeting").unwrap();
-    client
-        .with_generation(&resolution, CallMeta::new(), || {
-            Ok(Completion::new((), Outcome::text("hi")))
+    let resolution = client.use_case("greeting").unwrap();
+    resolution
+        .track(CallMeta::new(), || {
+            Ok(Completion::new((), Result::text("hi")))
         })
         .unwrap();
 
@@ -440,21 +440,21 @@ fn the_wrapper_times_the_call_and_returns_what_the_closure_returned() {
         .log_sink(|_| {})
         .build()
         .unwrap();
-    client.set_snapshot(&support::greeting_snapshot()).unwrap();
-    let resolution = client.resolve("greeting").unwrap();
+    client.set_use_cases(&support::greeting_document()).unwrap();
+    let resolution = client.use_case("greeting").unwrap();
 
-    let messages = resolution.render_messages(json!({"name": "Ada"})).unwrap();
+    let messages = resolution.messages(json!({"name": "Ada"})).unwrap();
     let meta = CallMeta::new()
         .variables(json!({"name": "Ada"}))
         .input_messages(messages.clone())
         .trace_id("job:1");
 
-    let answer = client
-        .with_generation(&resolution, meta, || {
+    let answer = resolution
+        .track(meta, || {
             std::thread::sleep(Duration::from_millis(30));
             Ok(Completion::new(
                 "Hello, Ada!".to_string(),
-                Outcome::text("Hello, Ada!")
+                Result::text("Hello, Ada!")
                     .with_finish_reason("stop")
                     .with_usage(Usage::tokens(38, 9)),
             ))
@@ -473,7 +473,7 @@ fn the_wrapper_times_the_call_and_returns_what_the_closure_returned() {
         "Say hello to Ada."
     );
     assert_eq!(record["usage"]["input_tokens"], 38);
-    assert_eq!(record["resolution_source"], "manual");
+    assert_eq!(record["source"], "manual");
     let _ = Message::new("user", "unused");
 }
 
@@ -486,14 +486,14 @@ fn a_failed_call_is_logged_with_its_usage_and_the_error_propagates() {
         .log_sink(|_| {})
         .build()
         .unwrap();
-    client.set_snapshot(&support::greeting_snapshot()).unwrap();
-    let resolution = client.resolve("greeting").unwrap();
+    client.set_use_cases(&support::greeting_document()).unwrap();
+    let resolution = client.use_case("greeting").unwrap();
 
-    let failure = client
-        .with_generation::<String, _>(&resolution, CallMeta::new(), || {
+    let failure = resolution
+        .track::<String, _>(CallMeta::new(), || {
             Err(
                 CallFailure::new(ErrorKind::Parse, "unexpected end of JSON input").with_outcome(
-                    Outcome::text("{\"greeting\":")
+                    Result::text("{\"greeting\":")
                         .with_finish_reason("length")
                         .with_usage(Usage::tokens(38, 512)),
                 ),
@@ -520,19 +520,14 @@ fn a_panic_is_logged_as_an_app_error_and_then_resumed() {
         .log_sink(|_| {})
         .build()
         .unwrap();
-    client.set_snapshot(&support::greeting_snapshot()).unwrap();
-    let resolution = client.resolve("greeting").unwrap();
+    client.set_use_cases(&support::greeting_document()).unwrap();
+    let resolution = client.use_case("greeting").unwrap();
 
     let previous = std::panic::take_hook();
     std::panic::set_hook(Box::new(|_| {}));
     let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe({
-        let client = client.clone();
         let resolution = resolution.clone();
-        move || {
-            client.with_generation::<(), _>(&resolution, CallMeta::new(), || {
-                panic!("the provider client blew up")
-            })
-        }
+        move || resolution.track::<(), _>(CallMeta::new(), || panic!("the provider client blew up"))
     }));
     std::panic::set_hook(previous);
 
@@ -548,7 +543,7 @@ fn shutdown_drains_the_queue() {
     let sent = Arc::new(AtomicUsize::new(0));
     let counter = sent.clone();
     let server = StubServer::start(move |request, _| {
-        let count = request.json()["generations"].as_array().unwrap().len();
+        let count = request.json()["logs"].as_array().unwrap().len();
         counter.fetch_add(count, Ordering::Relaxed);
         StubResponse::json(
             202,
@@ -644,7 +639,7 @@ fn shutdown_mid_backoff_returns_at_once() {
 #[test]
 fn logging_is_safe_from_many_threads_at_once() {
     let server = StubServer::start(|request, _| {
-        let count = request.json()["generations"].as_array().unwrap().len();
+        let count = request.json()["logs"].as_array().unwrap().len();
         StubResponse::json(
             202,
             format!(r#"{{"accepted":{count},"duplicates":0,"rejected":[]}}"#),

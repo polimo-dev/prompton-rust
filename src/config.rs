@@ -16,7 +16,7 @@ use crate::snapshot::PayloadPolicy;
 pub const DEFAULT_HOST: &str = "https://app.prompton.ai";
 /// The environment the SDK reads when nothing says otherwise.
 pub const DEFAULT_ENVIRONMENT: &str = "production";
-/// How long a snapshot is served from memory before a refresh is triggered.
+/// How long a use-case document is served from memory before a refresh is triggered.
 pub const DEFAULT_CACHE_TTL: Duration = Duration::from_secs(10);
 /// The ceiling on the refresh backoff after repeated failures.
 pub const MAX_BACKOFF: Duration = Duration::from_secs(300);
@@ -24,9 +24,9 @@ pub const MAX_BACKOFF: Duration = Duration::from_secs(300);
 /// How the SDK behaves with respect to the network.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Mode {
-    /// Poll PromptOn, resolve locally, send monitoring logs.
+    /// Poll PromptOn, read use cases locally, send monitoring logs.
     Live,
-    /// Never touch the network: resolve from the disk cache and the bundle only.
+    /// Never touch the network: read use cases from the disk cache and the bundle only.
     Offline,
     /// Never touch the network and capture monitoring logs in memory for assertions.
     Test,
@@ -88,13 +88,13 @@ pub struct Config {
     pub environment: String,
     /// The project slug, from the key or set explicitly.
     pub project: Option<String>,
-    /// How long a snapshot is served before a refresh is triggered.
+    /// How long a use-case document is served before a refresh is triggered.
     pub cache_ttl: Duration,
     /// The per-request timeout.
     pub request_timeout: Duration,
     /// Where the disk cache lives.
     pub disk_cache: DiskCache,
-    /// A snapshot file shipped inside the app, used when memory and disk are empty.
+    /// A use-case document file shipped inside the app, used when memory and disk are empty.
     pub bundle: Option<PathBuf>,
     /// Live, offline or test.
     pub mode: Mode,
@@ -102,11 +102,11 @@ pub struct Config {
     pub hash_end_user: bool,
     /// Whether to run the background poller.
     pub poll: bool,
-    /// Whether to fetch the snapshot synchronously at start when no tier has one.
+    /// Whether to fetch the use-case document synchronously at start when no tier has one.
     pub fetch_on_start: bool,
     /// The monitoring-log buffer's thresholds.
     pub log: LogConfig,
-    /// The policy for a use case whose snapshot entry carries none.
+    /// The policy for a use case whose document entry carries none.
     pub payload_defaults: PayloadPolicy,
     /// The app's redaction hook.
     pub redact: Option<RedactHook>,
@@ -237,7 +237,7 @@ impl ClientBuilder {
         self
     }
 
-    /// How long a snapshot is served from memory before a refresh is triggered (default 10 s).
+    /// How long a use-case document is served from memory before a refresh is triggered (default 10 s).
     pub fn cache_ttl(mut self, cache_ttl: Duration) -> ClientBuilder {
         self.cache_ttl = Some(cache_ttl);
         self
@@ -261,7 +261,7 @@ impl ClientBuilder {
         self
     }
 
-    /// A snapshot file shipped inside the app, used when memory and disk are empty.
+    /// A use-case document file shipped inside the app, used when memory and disk are empty.
     pub fn bundle(mut self, path: impl Into<PathBuf>) -> ClientBuilder {
         self.bundle = Some(path.into());
         self
@@ -279,15 +279,15 @@ impl ClientBuilder {
         self
     }
 
-    /// Turns the background poller off; refreshes then happen on the next resolve after the TTL.
+    /// Turns the background poller off; refreshes then happen on the next `use_case` call after the TTL.
     pub fn poll(mut self, poll: bool) -> ClientBuilder {
         self.poll = Some(poll);
         self
     }
 
-    /// Whether a cold start (nothing in memory, on disk or in the bundle) fetches the snapshot
-    /// synchronously before [`ClientBuilder::build`] returns. On by default, so the first resolve after
-    /// a cold start has something to work with; turn it off in a process that must never block on
+    /// Whether a cold start (nothing in memory, on disk or in the bundle) fetches the use-case document
+    /// synchronously before [`ClientBuilder::build`] returns. On by default, so the first `use_case`
+    /// after a cold start has something to work with; turn it off in a process that must never block on
     /// PromptOn at boot.
     pub fn fetch_on_start(mut self, fetch_on_start: bool) -> ClientBuilder {
         self.fetch_on_start = Some(fetch_on_start);
@@ -300,7 +300,7 @@ impl ClientBuilder {
         self
     }
 
-    /// The payload policy for a use case whose snapshot entry carries none.
+    /// The payload policy for a use case whose document entry carries none.
     pub fn payload_defaults(mut self, defaults: PayloadPolicy) -> ClientBuilder {
         self.payload_defaults = Some(defaults);
         self
@@ -415,11 +415,11 @@ pub fn project_from_key(api_key: &str) -> Option<String> {
     }
 }
 
-/// The default disk-cache path: `<os cache dir>/prompton/<project>.<environment>.snapshot.json`.
+/// The default disk-cache path: `<os cache dir>/prompton/<project>.<environment>.use-cases.json`.
 pub fn default_cache_path(project: &str, environment: &str) -> PathBuf {
     let base = cache_root();
     base.join("prompton")
-        .join(format!("{project}.{environment}.snapshot.json"))
+        .join(format!("{project}.{environment}.use-cases.json"))
 }
 
 fn cache_root() -> PathBuf {

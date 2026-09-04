@@ -8,14 +8,14 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use prompton::{
-    Client, Error, HttpClient, HttpRequest, HttpResponse, Mode, ResolutionSource, TransportError,
+    Client, Error, HttpClient, HttpRequest, HttpResponse, Mode, Source, TransportError,
 };
-use support::{snapshot_json, StubResponse, StubServer};
+use support::{document_json, StubResponse, StubServer};
 
 const ETAG: &str = "\"sha256-1111\"";
 
 fn ok_snapshot(greeting: &str) -> StubResponse {
-    StubResponse::json(200, snapshot_json("production", "demo", greeting))
+    StubResponse::json(200, document_json("production", "demo", greeting))
         .with_header("etag", ETAG)
         .with_header("cache-control", "max-age=30")
 }
@@ -34,13 +34,13 @@ fn client_for(server: &StubServer, ttl: Duration) -> Client {
 }
 
 #[test]
-fn every_resolve_inside_the_ttl_is_served_from_memory() {
+fn every_use_case_inside_the_ttl_is_served_from_memory() {
     let server = StubServer::start(|_, _| ok_snapshot("Hello {{ name }}"));
     let client = client_for(&server, Duration::from_secs(60));
 
     for _ in 0..25 {
-        let resolution = client.resolve("greeting").expect("resolve");
-        assert_eq!(resolution.source, ResolutionSource::Remote);
+        let resolution = client.use_case("greeting").expect("use_case");
+        assert_eq!(resolution.source, Source::Remote);
         assert_eq!(resolution.model.as_deref(), Some("openai/gpt-4o-mini"));
     }
 
@@ -49,7 +49,7 @@ fn every_resolve_inside_the_ttl_is_served_from_memory() {
         1,
         "the cache TTL must keep the SDK off the network"
     );
-    assert_eq!(client.snapshot_fetch_count(), 1);
+    assert_eq!(client.use_case_fetch_count(), 1);
 }
 
 #[test]
@@ -67,19 +67,19 @@ fn a_refresh_after_the_ttl_is_conditional_and_a_304_changes_nothing() {
     });
 
     let client = client_for(&server, Duration::from_millis(80));
-    let first = client.resolve("greeting").expect("resolve");
+    let first = client.use_case("greeting").expect("use_case");
     assert_eq!(first.etag.as_deref(), Some(ETAG));
 
     std::thread::sleep(Duration::from_millis(400));
 
-    let later = client.resolve("greeting").expect("resolve");
+    let later = client.use_case("greeting").expect("use_case");
     assert_eq!(later.etag.as_deref(), Some(ETAG));
-    assert_eq!(later.source, ResolutionSource::Remote);
+    assert_eq!(later.source, Source::Remote);
     assert!(
         server.request_count() >= 2,
         "the poller should have refreshed at least once"
     );
-    let info = client.snapshot_info();
+    let info = client.use_cases_info();
     assert!(!info.stale, "a 304 confirms the document is current");
     assert_eq!(info.failures, 0);
 }
@@ -90,7 +90,7 @@ fn a_new_document_replaces_the_old_one() {
         if index == 0 {
             ok_snapshot("Hello {{ name }}")
         } else {
-            StubResponse::json(200, snapshot_json("production", "demo", "Hi {{ name }}!"))
+            StubResponse::json(200, document_json("production", "demo", "Hi {{ name }}!"))
                 .with_header("etag", "\"sha256-2222\"")
         }
     });
@@ -105,15 +105,15 @@ fn a_new_document_replaces_the_old_one() {
     std::thread::sleep(Duration::from_millis(300));
     assert_eq!(rendered(&client), "Hi Ada!");
     assert_eq!(
-        client.snapshot_info().etag.as_deref(),
+        client.use_cases_info().etag.as_deref(),
         Some("\"sha256-2222\"")
     );
 }
 
 fn rendered(client: &Client) -> String {
-    let resolution = client.resolve("greeting").expect("resolve");
+    let resolution = client.use_case("greeting").expect("use_case");
     resolution
-        .render_messages(serde_json::json!({"name": "Ada"}))
+        .messages(serde_json::json!({"name": "Ada"}))
         .expect("render")[0]
         .content
         .clone()
@@ -137,7 +137,7 @@ fn a_429_is_honoured_and_the_caller_never_sees_it() {
     std::thread::sleep(Duration::from_millis(400));
 
     assert!(
-        client.resolve("greeting").is_ok(),
+        client.use_case("greeting").is_ok(),
         "the caller sees nothing"
     );
     assert_eq!(
@@ -145,7 +145,7 @@ fn a_429_is_honoured_and_the_caller_never_sees_it() {
         2,
         "Retry-After must hold the SDK back: one fetch, one 429, then silence"
     );
-    let info = client.snapshot_info();
+    let info = client.use_cases_info();
     assert!(info.stale);
     assert_eq!(info.failures, 1);
 }
@@ -177,7 +177,7 @@ fn repeated_5xx_backs_off_and_keeps_serving_the_previous_document() {
         (2..=6).contains(&count),
         "expected exponential backoff, got {count} requests"
     );
-    assert!(client.snapshot_info().failures >= 1);
+    assert!(client.use_cases_info().failures >= 1);
 }
 
 /// A transport that never answers in time, to prove a timeout is treated like any other failure.
@@ -193,12 +193,12 @@ impl HttpClient for TimingOutClient {
 }
 
 #[test]
-fn a_timeout_leaves_the_bundle_in_place_and_never_fails_a_resolve() {
+fn a_timeout_leaves_the_bundle_in_place_and_never_fails_a_use_case_lookup() {
     let dir = support::temp_dir("bundle");
-    let bundle = dir.join("snapshot.production.json");
+    let bundle = dir.join("use-cases.production.json");
     std::fs::write(
         &bundle,
-        snapshot_json("production", "demo", "Hi {{ name }}"),
+        document_json("production", "demo", "Hi {{ name }}"),
     )
     .unwrap();
 
@@ -218,10 +218,10 @@ fn a_timeout_leaves_the_bundle_in_place_and_never_fails_a_resolve() {
         .unwrap();
 
     std::thread::sleep(Duration::from_millis(250));
-    let resolution = client.resolve("greeting").expect("the bundle answers");
-    assert_eq!(resolution.source, ResolutionSource::Bundle);
+    let resolution = client.use_case("greeting").expect("the bundle answers");
+    assert_eq!(resolution.source, Source::Bundle);
     assert!(calls.load(Ordering::Relaxed) >= 1, "it kept trying");
-    assert!(client.snapshot_info().stale);
+    assert!(client.use_cases_info().stale);
 }
 
 #[test]
@@ -229,8 +229,8 @@ fn the_tiers_are_memory_then_disk_then_bundle_then_remote() {
     let dir = support::temp_dir("tiers");
     let disk = dir.join("cache.json");
     let bundle = dir.join("bundle.json");
-    std::fs::write(&disk, snapshot_json("production", "demo", "from disk")).unwrap();
-    std::fs::write(&bundle, snapshot_json("production", "demo", "from bundle")).unwrap();
+    std::fs::write(&disk, document_json("production", "demo", "from disk")).unwrap();
+    std::fs::write(&bundle, document_json("production", "demo", "from bundle")).unwrap();
 
     // Disk wins over the bundle.
     let client = Client::builder()
@@ -241,12 +241,9 @@ fn the_tiers_are_memory_then_disk_then_bundle_then_remote() {
         .log_sink(|_| {})
         .build()
         .unwrap();
-    let resolution = client.resolve("greeting").unwrap();
-    assert_eq!(resolution.source, ResolutionSource::Disk);
-    assert_eq!(
-        resolution.messages.as_ref().unwrap()[0].content,
-        "from disk"
-    );
+    let resolution = client.use_case("greeting").unwrap();
+    assert_eq!(resolution.source, Source::Disk);
+    assert_eq!(resolution.messages(()).unwrap()[0].content, "from disk");
 
     // With no disk cache the bundle answers.
     std::fs::remove_file(&disk).unwrap();
@@ -258,10 +255,7 @@ fn the_tiers_are_memory_then_disk_then_bundle_then_remote() {
         .log_sink(|_| {})
         .build()
         .unwrap();
-    assert_eq!(
-        client.resolve("greeting").unwrap().source,
-        ResolutionSource::Bundle
-    );
+    assert_eq!(client.use_case("greeting").unwrap().source, Source::Bundle);
 
     // With neither, resolution fails with a clear message and nothing else.
     let client = Client::builder()
@@ -271,7 +265,7 @@ fn the_tiers_are_memory_then_disk_then_bundle_then_remote() {
         .log_sink(|_| {})
         .build()
         .unwrap();
-    match client.resolve("greeting") {
+    match client.use_case("greeting") {
         Err(Error::NotReady(message)) => {
             assert!(message.contains("production"), "{message}");
         }
@@ -284,7 +278,7 @@ fn a_document_for_another_environment_or_project_is_never_used() {
     let dir = support::temp_dir("guard");
     let disk = dir.join("cache.json");
 
-    std::fs::write(&disk, snapshot_json("staging", "demo", "staging text")).unwrap();
+    std::fs::write(&disk, document_json("staging", "demo", "staging text")).unwrap();
     let client = Client::builder()
         .mode(Mode::Offline)
         .environment("production")
@@ -293,11 +287,11 @@ fn a_document_for_another_environment_or_project_is_never_used() {
         .build()
         .unwrap();
     assert!(
-        matches!(client.resolve("greeting"), Err(Error::NotReady(_))),
+        matches!(client.use_case("greeting"), Err(Error::NotReady(_))),
         "a staging document must not answer a production process"
     );
 
-    std::fs::write(&disk, snapshot_json("production", "other", "other project")).unwrap();
+    std::fs::write(&disk, document_json("production", "other", "other project")).unwrap();
     let client = Client::builder()
         .mode(Mode::Offline)
         .environment("production")
@@ -307,7 +301,7 @@ fn a_document_for_another_environment_or_project_is_never_used() {
         .build()
         .unwrap();
     assert!(
-        matches!(client.resolve("greeting"), Err(Error::NotReady(_))),
+        matches!(client.use_case("greeting"), Err(Error::NotReady(_))),
         "another project's document must not answer either"
     );
 }
@@ -326,7 +320,7 @@ fn a_corrupt_or_partial_file_is_ignored_rather_than_fatal() {
         .build()
         .unwrap();
     assert!(matches!(
-        client.resolve("greeting"),
+        client.use_case("greeting"),
         Err(Error::NotReady(_))
     ));
 
@@ -340,7 +334,7 @@ fn a_corrupt_or_partial_file_is_ignored_rather_than_fatal() {
         .build()
         .unwrap();
     assert!(matches!(
-        client.resolve("greeting"),
+        client.use_case("greeting"),
         Err(Error::NotReady(_))
     ));
 }
@@ -360,7 +354,7 @@ fn a_fetched_snapshot_is_written_to_disk_with_a_sidecar() {
         .log_sink(|_| {})
         .build()
         .unwrap();
-    assert!(client.resolve("greeting").is_ok());
+    assert!(client.use_case("greeting").is_ok());
 
     let written = std::fs::read(&disk).expect("the disk cache was written");
     let document: serde_json::Value = serde_json::from_slice(&written).unwrap();
@@ -389,16 +383,13 @@ fn a_fetched_snapshot_is_written_to_disk_with_a_sidecar() {
         .log_sink(|_| {})
         .build()
         .unwrap();
-    assert_eq!(
-        offline.resolve("greeting").unwrap().source,
-        ResolutionSource::Disk
-    );
+    assert_eq!(offline.use_case("greeting").unwrap().source, Source::Disk);
 }
 
 #[test]
 fn fetch_once_and_export_are_synchronous() {
     let dir = support::temp_dir("export");
-    let bundle = dir.join("snapshot.production.json");
+    let bundle = dir.join("use-cases.production.json");
     let server = StubServer::start(|_, _| ok_snapshot("Hello {{ name }}"));
 
     let client = Client::builder()
@@ -415,9 +406,9 @@ fn fetch_once_and_export_are_synchronous() {
     client.refresh().expect("a synchronous fetch");
     assert_eq!(server.request_count(), before + 1);
 
-    client.export_snapshot(&bundle).expect("export");
+    client.export_use_cases(&bundle).expect("export");
     assert!(bundle.exists());
-    assert!(dir.join("snapshot.production.json.meta.json").exists());
+    assert!(dir.join("use-cases.production.json.meta.json").exists());
 
     let from_bundle = Client::builder()
         .mode(Mode::Offline)
@@ -428,8 +419,8 @@ fn fetch_once_and_export_are_synchronous() {
         .build()
         .unwrap();
     assert_eq!(
-        from_bundle.resolve("greeting").unwrap().source,
-        ResolutionSource::Bundle
+        from_bundle.use_case("greeting").unwrap().source,
+        Source::Bundle
     );
 }
 
@@ -437,7 +428,7 @@ fn fetch_once_and_export_are_synchronous() {
 fn without_an_api_key_no_remote_call_is_made_and_it_is_said_once() {
     let dir = support::temp_dir("nokey");
     let disk = dir.join("cache.json");
-    std::fs::write(&disk, snapshot_json("production", "demo", "from disk")).unwrap();
+    std::fs::write(&disk, document_json("production", "demo", "from disk")).unwrap();
 
     let lines = Arc::new(std::sync::Mutex::new(Vec::new()));
     let sink = lines.clone();
@@ -451,7 +442,7 @@ fn without_an_api_key_no_remote_call_is_made_and_it_is_said_once() {
         .build()
         .unwrap();
 
-    assert!(client.resolve("greeting").is_ok());
+    assert!(client.use_case("greeting").is_ok());
     assert_eq!(server.request_count(), 0, "no key, no remote calls");
     assert!(matches!(
         client.refresh(),
@@ -476,7 +467,7 @@ fn resolving_is_safe_from_many_threads_at_once() {
         let client = client.clone();
         handles.push(std::thread::spawn(move || {
             for _ in 0..200 {
-                let resolution = client.resolve("greeting").expect("resolve");
+                let resolution = client.use_case("greeting").expect("use_case");
                 assert_eq!(resolution.deployment_revision, Some(3));
             }
         }));
@@ -487,12 +478,12 @@ fn resolving_is_safe_from_many_threads_at_once() {
 }
 
 #[test]
-fn without_the_poller_a_stale_resolve_refreshes_in_the_background() {
+fn without_the_poller_a_stale_use_case_lookup_refreshes_in_the_background() {
     let server = StubServer::start(|_, index| {
         if index == 0 {
             ok_snapshot("Hello {{ name }}")
         } else {
-            StubResponse::json(200, snapshot_json("production", "demo", "Hi {{ name }}!"))
+            StubResponse::json(200, document_json("production", "demo", "Hi {{ name }}!"))
                 .with_header("etag", "\"sha256-3333\"")
         }
     });
@@ -516,7 +507,7 @@ fn without_the_poller_a_stale_resolve_refreshes_in_the_background() {
     );
 
     std::thread::sleep(Duration::from_millis(80));
-    // This resolve is answered from memory and starts a refresh behind it.
+    // This use_case call is answered from memory and starts a refresh behind it.
     assert_eq!(rendered(&client), "Hello Ada");
 
     let deadline = std::time::Instant::now() + Duration::from_secs(3);

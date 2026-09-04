@@ -1,4 +1,4 @@
-//! Monitoring-log records: the JSON `POST /api/v1/generations` accepts, and the types the
+//! Monitoring-log records: the JSON `POST /api/v1/logs` accepts, and the types the
 //! convenience wrapper builds one from.
 //!
 //! Send one record per model call your app made, **including failures** — error rates and
@@ -67,7 +67,7 @@ impl ErrorKind {
 
 /// What went wrong with a provider call.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct GenerationError {
+pub struct LogError {
     /// One of the seven canonical kinds.
     pub kind: ErrorKind,
     /// The HTTP status, when the failure was an HTTP one.
@@ -78,10 +78,10 @@ pub struct GenerationError {
     pub message: Option<String>,
 }
 
-impl GenerationError {
+impl LogError {
     /// An error of `kind` with a message.
-    pub fn new(kind: ErrorKind, message: impl Into<String>) -> GenerationError {
-        GenerationError {
+    pub fn new(kind: ErrorKind, message: impl Into<String>) -> LogError {
+        LogError {
             kind,
             status: None,
             message: Some(message.into()),
@@ -89,8 +89,8 @@ impl GenerationError {
     }
 
     /// An HTTP failure: the kind is derived from the status.
-    pub fn http(status: u16, message: impl Into<String>) -> GenerationError {
-        GenerationError {
+    pub fn http(status: u16, message: impl Into<String>) -> LogError {
+        LogError {
             kind: ErrorKind::from_status(status),
             status: Some(status),
             message: Some(message.into()),
@@ -171,7 +171,7 @@ impl Default for Sdk {
 /// Only `id`, `use_case`, `model`, `status` and `started_at` are required; `id` is filled with a
 /// fresh UUIDv7 when you leave it empty.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct GenerationRecord {
+pub struct LogRecord {
     /// The idempotency key: a UUIDv7 the app generates before the provider call.
     pub id: String,
     /// The use case key.
@@ -203,7 +203,7 @@ pub struct GenerationRecord {
     pub model_id: Option<String>,
     /// Which tier the configuration came from.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub resolution_source: Option<String>,
+    pub source: Option<String>,
     /// The provider that was called.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub provider: Option<String>,
@@ -230,7 +230,7 @@ pub struct GenerationRecord {
     pub stop_kind: Option<StopKind>,
     /// What went wrong, for `status: error`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub error: Option<GenerationError>,
+    pub error: Option<LogError>,
     /// Tokens and cost.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub usage: Option<Usage>,
@@ -257,14 +257,10 @@ pub struct GenerationRecord {
     pub sdk: Option<Sdk>,
 }
 
-impl GenerationRecord {
+impl LogRecord {
     /// A record with the five required fields; `id` is a fresh UUIDv7 and `started_at` is now.
-    pub fn new(
-        use_case: impl Into<String>,
-        model: impl Into<String>,
-        status: Status,
-    ) -> GenerationRecord {
-        GenerationRecord {
+    pub fn new(use_case: impl Into<String>, model: impl Into<String>, status: Status) -> LogRecord {
+        LogRecord {
             id: crate::uuidv7::generate(),
             use_case: use_case.into(),
             model: model.into(),
@@ -276,7 +272,7 @@ impl GenerationRecord {
             prompt: None,
             prompt_version_id: None,
             model_id: None,
-            resolution_source: None,
+            source: None,
             provider: None,
             model_used: None,
             upstream_provider: None,
@@ -298,8 +294,8 @@ impl GenerationRecord {
     }
 
     /// Copies the resolution evidence — deployment, prompt, model and source — into the record.
-    pub fn from_resolution(resolution: &Resolution, status: Status) -> GenerationRecord {
-        let mut record = GenerationRecord::new(
+    pub(crate) fn from_resolution(resolution: &Resolution, status: Status) -> LogRecord {
+        let mut record = LogRecord::new(
             resolution.use_case.clone(),
             resolution.model.clone().unwrap_or_default(),
             status,
@@ -309,7 +305,7 @@ impl GenerationRecord {
     }
 
     /// Fills the resolution-derived fields of an existing record.
-    pub fn apply_resolution(&mut self, resolution: &Resolution) {
+    pub(crate) fn apply_resolution(&mut self, resolution: &Resolution) {
         if self.use_case.is_empty() {
             self.use_case = resolution.use_case.clone();
         }
@@ -335,7 +331,7 @@ impl GenerationRecord {
         if self.provider.is_none() {
             self.provider = resolution.provider.clone();
         }
-        self.resolution_source
+        self.source
             .get_or_insert_with(|| resolution.source.as_str().to_string());
         if self.params.is_none() && !resolution.params.is_empty() {
             self.params = Some(resolution.params.clone());
@@ -343,7 +339,7 @@ impl GenerationRecord {
     }
 
     /// Checks the fields the server requires. Called by `log`, so an invalid record never queues.
-    pub fn validate(&self) -> Result<(), crate::Error> {
+    pub fn validate(&self) -> std::result::Result<(), crate::Error> {
         for (field, value) in [
             ("use_case", self.use_case.as_str()),
             ("model", self.model.as_str()),
@@ -365,9 +361,9 @@ impl GenerationRecord {
     }
 }
 
-/// What the provider call produced, for the [`crate::Client::with_generation`] wrapper.
+/// What the provider call produced, for the [`crate::Client::track`] wrapper.
 #[derive(Debug, Clone, Default, PartialEq)]
-pub struct Outcome {
+pub struct Result {
     /// The answer text.
     pub content: Option<String>,
     /// The tool calls the model asked for, in the provider's own shape.
@@ -386,29 +382,115 @@ pub struct Outcome {
     pub is_byok: Option<bool>,
 }
 
-impl Outcome {
+impl Result {
     /// An outcome carrying only the answer text.
-    pub fn text(content: impl Into<String>) -> Outcome {
-        Outcome {
+    pub fn text(content: impl Into<String>) -> Result {
+        Result {
             content: Some(content.into()),
-            ..Outcome::default()
+            ..Result::default()
+        }
+    }
+
+    /// Builds a result from an OpenAI-compatible response object.
+    ///
+    /// The adapter accepts any `Serialize` value and reads the common chat-completion shape:
+    /// `choices[0].message.content`, `choices[0].message.tool_calls`, `choices[0].finish_reason`,
+    /// `usage.prompt_tokens`, `usage.completion_tokens`, and `model`.
+    pub fn from_openai(answer: impl Serialize) -> Result {
+        let value = serde_json::to_value(answer).unwrap_or(Value::Null);
+        let first_choice = value
+            .get("choices")
+            .and_then(Value::as_array)
+            .and_then(|choices| choices.first());
+        let message = first_choice.and_then(|choice| choice.get("message"));
+        let usage = value.get("usage").unwrap_or(&Value::Null);
+
+        Result {
+            content: message
+                .and_then(|message| message.get("content"))
+                .and_then(Value::as_str)
+                .map(str::to_string),
+            tool_calls: message
+                .and_then(|message| message.get("tool_calls"))
+                .filter(|tool_calls| !tool_calls.is_null())
+                .cloned(),
+            finish_reason: first_choice
+                .and_then(|choice| choice.get("finish_reason"))
+                .and_then(Value::as_str)
+                .map(str::to_string),
+            usage: Usage {
+                input_tokens: usage.get("prompt_tokens").and_then(Value::as_i64),
+                output_tokens: usage.get("completion_tokens").and_then(Value::as_i64),
+                raw: (!usage.is_null()).then(|| usage.clone()),
+                ..Usage::default()
+            },
+            model_used: value
+                .get("model")
+                .and_then(Value::as_str)
+                .map(str::to_string),
+            ..Result::default()
+        }
+    }
+
+    /// Builds a result from an Anthropic-compatible response object.
+    ///
+    /// The adapter reads text blocks from `content`, `stop_reason`, `usage.input_tokens`,
+    /// `usage.output_tokens`, and `model`.
+    pub fn from_anthropic(answer: impl Serialize) -> Result {
+        let value = serde_json::to_value(answer).unwrap_or(Value::Null);
+        let content = value
+            .get("content")
+            .and_then(Value::as_array)
+            .map(|blocks| {
+                blocks
+                    .iter()
+                    .filter_map(|block| {
+                        if block.get("type").and_then(Value::as_str) == Some("text") {
+                            block.get("text").and_then(Value::as_str)
+                        } else {
+                            None
+                        }
+                    })
+                    .collect::<Vec<_>>()
+                    .join("")
+            })
+            .filter(|text| !text.is_empty());
+        let usage = value.get("usage").unwrap_or(&Value::Null);
+
+        Result {
+            content,
+            finish_reason: value
+                .get("stop_reason")
+                .and_then(Value::as_str)
+                .map(str::to_string),
+            usage: Usage {
+                input_tokens: usage.get("input_tokens").and_then(Value::as_i64),
+                output_tokens: usage.get("output_tokens").and_then(Value::as_i64),
+                raw: (!usage.is_null()).then(|| usage.clone()),
+                ..Usage::default()
+            },
+            model_used: value
+                .get("model")
+                .and_then(Value::as_str)
+                .map(str::to_string),
+            ..Result::default()
         }
     }
 
     /// Sets the provider's raw finish reason (the stop kind is derived from it).
-    pub fn with_finish_reason(mut self, finish_reason: impl Into<String>) -> Outcome {
+    pub fn with_finish_reason(mut self, finish_reason: impl Into<String>) -> Result {
         self.finish_reason = Some(finish_reason.into());
         self
     }
 
     /// Sets the usage.
-    pub fn with_usage(mut self, usage: Usage) -> Outcome {
+    pub fn with_usage(mut self, usage: Usage) -> Result {
         self.usage = usage;
         self
     }
 
     /// Sets the tool calls.
-    pub fn with_tool_calls(mut self, tool_calls: Value) -> Outcome {
+    pub fn with_tool_calls(mut self, tool_calls: Value) -> Result {
         self.tool_calls = Some(tool_calls);
         self
     }
@@ -426,7 +508,7 @@ impl Outcome {
 /// What the app knows about a call that the resolution does not.
 #[derive(Debug, Clone, Default)]
 pub struct CallMeta {
-    /// Use this id instead of a fresh one (pre-issued with [`crate::Client::generation_id`]).
+    /// Use this id instead of a fresh one (pre-issued with [`crate::Client::log_id`]).
     pub id: Option<String>,
     /// The variables the prompt was rendered with.
     pub variables: Option<Vars>,
@@ -509,12 +591,12 @@ pub struct Completion<T> {
     /// Whatever your closure produced.
     pub value: T,
     /// What to record about the call.
-    pub outcome: Outcome,
+    pub outcome: Result,
 }
 
 impl<T> Completion<T> {
     /// Pairs a value with its outcome.
-    pub fn new(value: T, outcome: Outcome) -> Completion<T> {
+    pub fn new(value: T, outcome: Result) -> Completion<T> {
         Completion { value, outcome }
     }
 }
@@ -524,10 +606,10 @@ impl<T> Completion<T> {
 #[derive(Debug)]
 pub struct CallFailure {
     /// What went wrong.
-    pub error: GenerationError,
+    pub error: LogError,
     /// What the provider returned before the failure, when anything did. Boxed to keep the error
     /// small enough to return by value without cost.
-    pub outcome: Option<Box<Outcome>>,
+    pub outcome: Option<Box<Result>>,
     /// The app's own error, carried through untouched.
     pub source: Option<Box<dyn std::error::Error + Send + Sync>>,
 }
@@ -536,7 +618,7 @@ impl CallFailure {
     /// A failure of `kind` with a message.
     pub fn new(kind: ErrorKind, message: impl Into<String>) -> CallFailure {
         CallFailure {
-            error: GenerationError::new(kind, message),
+            error: LogError::new(kind, message),
             outcome: None,
             source: None,
         }
@@ -545,14 +627,14 @@ impl CallFailure {
     /// An HTTP failure from the provider.
     pub fn http(status: u16, message: impl Into<String>) -> CallFailure {
         CallFailure {
-            error: GenerationError::http(status, message),
+            error: LogError::http(status, message),
             outcome: None,
             source: None,
         }
     }
 
     /// Keeps the usage and output the provider did return.
-    pub fn with_outcome(mut self, outcome: Outcome) -> CallFailure {
+    pub fn with_outcome(mut self, outcome: Result) -> CallFailure {
         self.outcome = Some(Box::new(outcome));
         self
     }
@@ -599,10 +681,10 @@ pub(crate) fn build_record(
     meta: &CallMeta,
     timing: Timing,
     status: Status,
-    outcome: Option<&Outcome>,
-    error: Option<&GenerationError>,
-) -> GenerationRecord {
-    let mut record = GenerationRecord::new(
+    outcome: Option<&Result>,
+    error: Option<&LogError>,
+) -> LogRecord {
+    let mut record = LogRecord::new(
         resolution.use_case.clone(),
         resolution.model.clone().unwrap_or_default(),
         status,
@@ -730,7 +812,7 @@ mod tests {
 
     #[test]
     fn requires_the_five_fields() {
-        let mut record = GenerationRecord::new("greeting", "openai/gpt-4o-mini", Status::Ok);
+        let mut record = LogRecord::new("greeting", "openai/gpt-4o-mini", Status::Ok);
         assert!(record.validate().is_ok());
         record.model = String::new();
         assert!(record.validate().is_err());
@@ -738,7 +820,7 @@ mod tests {
 
     #[test]
     fn omits_absent_fields() {
-        let record = GenerationRecord::new("greeting", "m", Status::Ok);
+        let record = LogRecord::new("greeting", "m", Status::Ok);
         let map = record.to_map();
         assert!(!map.contains_key("error"));
         assert!(!map.contains_key("output"));

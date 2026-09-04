@@ -2,7 +2,7 @@
   "batch_envelope": {
     "idempotency": "the record id is the primary key: resending the identical batch returns duplicates instead of accepted, and stores nothing new",
     "request": {
-      "generations": [
+      "logs": [
         {
           "context": {
             "language": "en",
@@ -47,10 +47,10 @@
           "prompt": "default",
           "prompt_version_id": "0198f2a1-0000-7000-8000-00000000a001",
           "provider": "openrouter",
-          "resolution_source": "remote",
+          "source": "remote",
           "sdk": {
             "name": "prompton_sdk",
-            "version": "0.1.0"
+            "version": "0.2.0"
           },
           "sequence": 1,
           "started_at": "2026-09-04T09:00:00.000000Z",
@@ -107,10 +107,10 @@
           "prompt": "default",
           "prompt_version_id": "0198f2a1-0000-7000-8000-00000000a001",
           "provider": "openrouter",
-          "resolution_source": "remote",
+          "source": "remote",
           "sdk": {
             "name": "prompton_sdk",
-            "version": "0.1.0"
+            "version": "0.2.0"
           },
           "sequence": 2,
           "started_at": "2026-09-04T09:00:00.000000Z",
@@ -164,10 +164,10 @@
           "prompt": "default",
           "prompt_version_id": "0198f2a1-0000-7000-8000-00000000a001",
           "provider": "openrouter",
-          "resolution_source": "remote",
+          "source": "remote",
           "sdk": {
             "name": "prompton_sdk",
-            "version": "0.1.0"
+            "version": "0.2.0"
           },
           "started_at": "2026-09-04T09:00:00.000000Z",
           "status": "error",
@@ -202,10 +202,10 @@
             "dimensions": 256
           },
           "provider": "openrouter",
-          "resolution_source": "disk",
+          "source": "disk",
           "sdk": {
             "name": "prompton_sdk",
-            "version": "0.1.0"
+            "version": "0.2.0"
           },
           "started_at": "2026-09-04T09:00:00.000000Z",
           "status": "ok",
@@ -237,10 +237,10 @@
           "prompt": "default",
           "prompt_version_id": "0198f2a1-0000-7000-8000-00000000a003",
           "provider": "openrouter",
-          "resolution_source": "bundle",
+          "source": "bundle",
           "sdk": {
             "name": "prompton_sdk",
-            "version": "0.1.0"
+            "version": "0.2.0"
           },
           "started_at": "2026-09-04T09:00:00.000000Z",
           "status": "ok",
@@ -270,8 +270,8 @@
       "rejected": []
     }
   },
-  "conformance": "generation_record",
-  "description": "Complete monitoring-log records in the shape POST /api/v1/generations accepts, plus the batch envelope and the server's validation rules.",
+  "conformance": "log_record",
+  "description": "Complete monitoring-log records in the shape POST /api/v1/logs accepts, plus the batch envelope and the server's validation rules.",
   "endpoint": {
     "headers": {
       "authorization": "Bearer ptn_<project_slug>_<random>",
@@ -279,7 +279,7 @@
     },
     "max_records_per_request": 200,
     "method": "POST",
-    "path": "/api/v1/generations",
+    "path": "/api/v1/logs",
     "query": {
       "environment": "production (default; a request parameter, not a key property)"
     },
@@ -301,7 +301,7 @@
       "status",
       "started_at"
     ],
-    "resolution_source": "remote | disk | bundle | manual",
+    "source": "remote | disk | bundle | manual",
     "soft_references": "deployment_id, prompt_version_id and model_id must be a UUID or absent; they are not foreign keys, so a record survives the deletion of what it points at",
     "started_at": "ISO8601 with an offset. Rejected when more than 5 minutes in the future or more than 7 days in the past - regenerate this field before replaying these fixtures against a live server",
     "status": "ok | error",
@@ -315,12 +315,12 @@
     "language": "elixir",
     "repo": "https://github.com/polimo-dev/prompton-elixir",
     "sdk": "prompton_sdk",
-    "sdk_version": "0.1.0"
+    "sdk_version": "0.2.0"
   },
   "records": [
     {
-      "built_by": "PromptOnSDK.with_generation/3",
-      "description": "A complete successful chat generation with usage, cost and output.",
+      "built_by": "UseCase::track",
+      "description": "A complete successful chat log with usage, cost and output.",
       "name": "chat/success",
       "record": {
         "context": {
@@ -366,10 +366,10 @@
         "prompt": "default",
         "prompt_version_id": "0198f2a1-0000-7000-8000-00000000a001",
         "provider": "openrouter",
-        "resolution_source": "remote",
+        "source": "remote",
         "sdk": {
           "name": "prompton_sdk",
-          "version": "0.1.0"
+          "version": "0.2.0"
         },
         "sequence": 1,
         "started_at": "2026-09-04T09:00:00.000000Z",
@@ -392,7 +392,7 @@
       }
     },
     {
-      "built_by": "PromptOnSDK.with_generation/3",
+      "built_by": "UseCase::track",
       "description": "The provider call failed. status is error, there is no output or usage, and error.kind is one of the seven canonical kinds.",
       "name": "chat/error_without_output",
       "record": {
@@ -431,10 +431,10 @@
         "prompt": "default",
         "prompt_version_id": "0198f2a1-0000-7000-8000-00000000a001",
         "provider": "openrouter",
-        "resolution_source": "remote",
+        "source": "remote",
         "sdk": {
           "name": "prompton_sdk",
-          "version": "0.1.0"
+          "version": "0.2.0"
         },
         "sequence": 2,
         "started_at": "2026-09-04T09:00:00.000000Z",
@@ -451,7 +451,7 @@
       }
     },
     {
-      "built_by": "PromptOnSDK.with_generation/3",
+      "built_by": "UseCase::track",
       "description": "The provider answered but the app could not parse the answer. status is error and the usage and output are still recorded, so the call still counts as spend and as a quality signal.",
       "name": "chat/error_with_usage_preserved",
       "record": {
@@ -493,10 +493,10 @@
         "prompt": "default",
         "prompt_version_id": "0198f2a1-0000-7000-8000-00000000a001",
         "provider": "openrouter",
-        "resolution_source": "remote",
+        "source": "remote",
         "sdk": {
           "name": "prompton_sdk",
-          "version": "0.1.0"
+          "version": "0.2.0"
         },
         "started_at": "2026-09-04T09:00:00.000000Z",
         "status": "error",
@@ -513,8 +513,8 @@
       }
     },
     {
-      "built_by": "PromptOnSDK.with_generation/3",
-      "description": "An embedding generation: kind is embedding, there is no prompt or prompt_version_id, the input is text and only input_tokens are reported. resolution_source records that the snapshot came from the disk cache.",
+      "built_by": "UseCase::track",
+      "description": "An embedding log: kind is embedding, there is no prompt or prompt_version_id, the input is text and only input_tokens are reported. source records that the use-case document came from the disk cache.",
       "name": "embedding/success",
       "record": {
         "context": {},
@@ -536,10 +536,10 @@
           "dimensions": 256
         },
         "provider": "openrouter",
-        "resolution_source": "disk",
+        "source": "disk",
         "sdk": {
           "name": "prompton_sdk",
-          "version": "0.1.0"
+          "version": "0.2.0"
         },
         "started_at": "2026-09-04T09:00:00.000000Z",
         "status": "ok",
@@ -576,10 +576,10 @@
         "prompt": "default",
         "prompt_version_id": "0198f2a1-0000-7000-8000-00000000a003",
         "provider": "openrouter",
-        "resolution_source": "bundle",
+        "source": "bundle",
         "sdk": {
           "name": "prompton_sdk",
-          "version": "0.1.0"
+          "version": "0.2.0"
         },
         "started_at": "2026-09-04T09:00:00.000000Z",
         "status": "ok",

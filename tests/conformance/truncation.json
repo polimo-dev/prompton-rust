@@ -2,7 +2,7 @@
   "cases": [
     {
       "expect": {
-        "generation": {
+        "log": {
           "id": "0198f2a1-0000-7000-8000-000000001001",
           "input": {
             "messages": [
@@ -22,7 +22,7 @@
           "use_case": "greeting"
         }
       },
-      "generation": {
+      "log": {
         "id": "0198f2a1-0000-7000-8000-000000001001",
         "input": {
           "messages": [
@@ -50,7 +50,7 @@
     },
     {
       "expect": {
-        "generation": {
+        "log": {
           "id": "0198f2a1-0000-7000-8000-000000001002",
           "input": {
             "text": "raw prompt text"
@@ -61,7 +61,7 @@
           "status": "ok"
         }
       },
-      "generation": {
+      "log": {
         "id": "0198f2a1-0000-7000-8000-000000001002",
         "input": "raw prompt text",
         "output": "raw completion text",
@@ -77,7 +77,7 @@
     },
     {
       "expect": {
-        "generation": {
+        "log": {
           "id": "0198f2a1-0000-7000-8000-000000001003",
           "input": {
             "messages": [
@@ -92,7 +92,7 @@
           "status": "ok"
         }
       },
-      "generation": {
+      "log": {
         "id": "0198f2a1-0000-7000-8000-000000001003",
         "input": {
           "messages": [
@@ -114,7 +114,7 @@
     },
     {
       "expect": {
-        "generation": {
+        "log": {
           "id": "0198f2a1-0000-7000-8000-000000001004",
           "input": {
             "text": "abcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghi\n…[truncated 272 bytes]…\nabcdefghijabcdefghijabcdefghijabcdefghij",
@@ -123,7 +123,7 @@
           "status": "ok"
         }
       },
-      "generation": {
+      "log": {
         "id": "0198f2a1-0000-7000-8000-000000001004",
         "input": {
           "text": "abcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghij"
@@ -140,7 +140,7 @@
     },
     {
       "expect": {
-        "generation": {
+        "log": {
           "id": "0198f2a1-0000-7000-8000-000000001005",
           "input": {
             "truncated": true,
@@ -153,7 +153,7 @@
           "status": "ok"
         }
       },
-      "generation": {
+      "log": {
         "id": "0198f2a1-0000-7000-8000-000000001005",
         "input": {
           "variables": {
@@ -172,7 +172,7 @@
     },
     {
       "expect": {
-        "generation": {
+        "log": {
           "id": "0198f2a1-0000-7000-8000-000000001006",
           "output": {
             "content": "abcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghi\n…[truncated 272 bytes]…\nabcdefghijabcdefghijabcdefghijabcdefghij",
@@ -181,7 +181,7 @@
           "status": "ok"
         }
       },
-      "generation": {
+      "log": {
         "id": "0198f2a1-0000-7000-8000-000000001006",
         "output": {
           "content": "abcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghij"
@@ -197,7 +197,7 @@
     },
     {
       "expect": {
-        "generation": {
+        "log": {
           "id": "0198f2a1-0000-7000-8000-000000001007",
           "output": {
             "content": null,
@@ -216,7 +216,7 @@
           "status": "ok"
         }
       },
-      "generation": {
+      "log": {
         "id": "0198f2a1-0000-7000-8000-000000001007",
         "output": {
           "content": null,
@@ -243,7 +243,7 @@
     },
     {
       "expect": {
-        "generation": {
+        "log": {
           "id": "0198f2a1-0000-7000-8000-000000001013",
           "output": {
             "content": null,
@@ -258,7 +258,7 @@
           "status": "ok"
         }
       },
-      "generation": {
+      "log": {
         "id": "0198f2a1-0000-7000-8000-000000001013",
         "output": {
           "content": null,
@@ -285,7 +285,7 @@
     },
     {
       "expect": {
-        "generation": {
+        "log": {
           "id": "0198f2a1-0000-7000-8000-000000001008",
           "input": {
             "messages": [
@@ -317,7 +317,7 @@
           "status": "ok"
         }
       },
-      "generation": {
+      "log": {
         "id": "0198f2a1-0000-7000-8000-000000001008",
         "input": {
           "messages": [
@@ -355,7 +355,7 @@
     },
     {
       "expect": {
-        "generation": {
+        "log": {
           "id": "0198f2a1-0000-7000-8000-000000001009",
           "input": {
             "messages": [
@@ -378,7 +378,7 @@
           "status": "ok"
         }
       },
-      "generation": {
+      "log": {
         "id": "0198f2a1-0000-7000-8000-000000001009",
         "input": {
           "messages": [
@@ -448,7 +448,7 @@
     },
     {
       "expect": {
-        "generation": {
+        "log": {
           "id": "0198f2a1-0000-7000-8000-00000000100a",
           "input": {
             "messages": [
@@ -467,7 +467,7 @@
           "status": "ok"
         }
       },
-      "generation": {
+      "log": {
         "id": "0198f2a1-0000-7000-8000-00000000100a",
         "input": {
           "messages": [
@@ -492,7 +492,7 @@
     },
     {
       "expect": {
-        "generation": {
+        "log": {
           "error": {
             "kind": "http_5xx",
             "message": "EEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEE\n…[truncated 1952 bytes]…\nEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEE",
@@ -502,7 +502,7 @@
           "status": "error"
         }
       },
-      "generation": {
+      "log": {
         "error": {
           "kind": "http_5xx",
           "message": "EEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEE",
@@ -521,7 +521,7 @@
     },
     {
       "expect": {
-        "generation": {
+        "log": {
           "id": "0198f2a1-0000-7000-8000-00000000100c",
           "input": {
             "bytes": 45,
@@ -536,7 +536,7 @@
           "status": "ok"
         }
       },
-      "generation": {
+      "log": {
         "id": "0198f2a1-0000-7000-8000-00000000100c",
         "input": {
           "messages": [
@@ -561,7 +561,7 @@
     },
     {
       "expect": {
-        "generation": {
+        "log": {
           "id": "0198f2a1-0000-7000-8000-00000000100d",
           "input": {
             "bytes": 26,
@@ -576,7 +576,7 @@
           "status": "ok"
         }
       },
-      "generation": {
+      "log": {
         "id": "0198f2a1-0000-7000-8000-00000000100d",
         "input": "raw prompt text",
         "output": "raw completion text",
@@ -592,12 +592,12 @@
     },
     {
       "expect": {
-        "generation": {
+        "log": {
           "id": "0198f2a1-0000-7000-8000-00000000100e",
           "status": "ok"
         }
       },
-      "generation": {
+      "log": {
         "id": "0198f2a1-0000-7000-8000-00000000100e",
         "input": {
           "messages": [
@@ -621,13 +621,13 @@
     },
     {
       "expect": {
-        "generation": {
+        "log": {
           "id": "0198f2a1-0000-7000-8000-00000000100f",
           "status": "ok",
           "stop_kind": "stop"
         }
       },
-      "generation": {
+      "log": {
         "id": "0198f2a1-0000-7000-8000-00000000100f",
         "input": {
           "text": "hi"
@@ -647,7 +647,7 @@
     },
     {
       "expect": {
-        "generation": {
+        "log": {
           "error": {
             "kind": "timeout",
             "message": "timed out"
@@ -659,7 +659,7 @@
           "status": "error"
         }
       },
-      "generation": {
+      "log": {
         "error": {
           "kind": "timeout",
           "message": "timed out"
@@ -679,7 +679,7 @@
     },
     {
       "expect": {
-        "generation": {
+        "log": {
           "id": "0198f2a1-0000-7000-8000-000000001011",
           "input": {
             "text": "hi"
@@ -691,7 +691,7 @@
           "stop_kind": "length"
         }
       },
-      "generation": {
+      "log": {
         "id": "0198f2a1-0000-7000-8000-000000001011",
         "input": {
           "text": "hi"
@@ -714,13 +714,13 @@
         "hash_end_user": true
       },
       "expect": {
-        "generation": {
+        "log": {
           "end_user_ref": "6d894aa3ee802549d7f340e7c1cf0d1c1cb14cd84f768d92ffaa6785337c4997",
           "id": "0198f2a1-0000-7000-8000-000000001012",
           "status": "ok"
         }
       },
-      "generation": {
+      "log": {
         "end_user_ref": "user-42",
         "id": "0198f2a1-0000-7000-8000-000000001012",
         "status": "ok"
@@ -735,14 +735,14 @@
     }
   ],
   "conformance": "truncation",
-  "description": "Monitoring-log payload policy applied by the SDK before a record is enqueued. Run apply(generation, policy, config) and compare with expect.generation.",
+  "description": "Monitoring-log payload policy applied by the SDK before a record is enqueued. Run apply(log, policy, config) and compare with expect.log.",
   "format_version": 1,
   "generated_from": {
     "commit": "5f04e7e4cfb66d379b2f00eef4cd3fce4ba26a61",
     "language": "elixir",
     "repo": "https://github.com/polimo-dev/prompton-elixir",
     "sdk": "prompton_sdk",
-    "sdk_version": "0.1.0"
+    "sdk_version": "0.2.0"
   },
   "limits": {
     "error_message": "2048 bytes, fixed",

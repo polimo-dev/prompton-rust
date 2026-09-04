@@ -16,9 +16,8 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use prompton::{
-    CallMeta, Client, Completion, CostSource, Error, GenerationRecord, HttpClient, HttpRequest,
-    HttpResponse, Kind, Outcome, RemoteResolveRequest, ResolveOptions, Status, TransportError,
-    UreqClient, Usage,
+    CallMeta, Client, Completion, CostSource, Error, HttpClient, HttpRequest, HttpResponse, Kind,
+    RemotePromptRequest, Result, Status, TransportError, UreqClient, Usage, UseCaseOptions,
 };
 use serde_json::{json, Value};
 
@@ -30,7 +29,7 @@ struct Recording {
 }
 
 impl HttpClient for Recording {
-    fn execute(&self, request: HttpRequest) -> Result<HttpResponse, TransportError> {
+    fn execute(&self, request: HttpRequest) -> std::result::Result<HttpResponse, TransportError> {
         let url = request.url.clone();
         let conditional = request
             .headers
@@ -78,8 +77,8 @@ fn against_the_running_fixture_server() {
         .build()
         .expect("the SDK should start against the fixture server");
 
-    // --- the snapshot, and a conditional repoll -----------------------------
-    let info = client.snapshot_info();
+    // --- the use-case document, and a conditional repoll --------------------
+    let info = client.use_cases_info();
     assert_eq!(info.environment.as_deref(), Some("production"));
     assert_eq!(info.project.as_deref(), Some("sdkfixture"));
     assert_eq!(info.schema_version, Some(prompton::SCHEMA_VERSION));
@@ -94,8 +93,8 @@ fn against_the_running_fixture_server() {
         .cloned()
         .expect("a recorded call");
     assert!(repoll.1, "the repoll must send If-None-Match");
-    assert_eq!(repoll.2, 304, "an unchanged snapshot answers 304");
-    assert_eq!(client.snapshot_info().etag.as_deref(), Some(etag.as_str()));
+    assert_eq!(repoll.2, 304, "an unchanged use-case document answers 304");
+    assert_eq!(client.use_cases_info().etag.as_deref(), Some(etag.as_str()));
 
     // The disk cache is written where it was asked for, and the sidecar carries the ETag.
     let sidecar: Value = serde_json::from_slice(
@@ -105,7 +104,7 @@ fn against_the_running_fixture_server() {
     assert_eq!(sidecar["etag"], Value::String(etag.clone()));
     assert_eq!(sidecar["project"], "sdkfixture");
 
-    // --- local resolution against POST /resolve ----------------------------
+    // --- local use-case rendering against the remote prompt endpoint ----------------------------
     same_as_server(&client, "greeting", None, json!({"name": "Ada"}));
     same_as_server(&client, "greeting", Some("ko"), json!({"name": "아다"}));
     same_as_server(
@@ -118,10 +117,10 @@ fn against_the_running_fixture_server() {
 
     // --- the error cases ---------------------------------------------------
     assert!(matches!(
-        client.resolve("nope"),
+        client.use_case("nope"),
         Err(Error::UnknownUseCase(_))
     ));
-    match client.resolve_remote(&RemoteResolveRequest::new("nope")) {
+    match client.prompt_remote(&RemotePromptRequest::new("nope")) {
         Err(Error::Http {
             status, details, ..
         }) => {
@@ -131,31 +130,31 @@ fn against_the_running_fixture_server() {
         other => panic!("expected a 404 for an unknown use case, got {other:?}"),
     }
 
-    match client.resolve_with("greeting", &ResolveOptions::prompt("fr")) {
-        Err(Error::UnknownPrompt {
-            available_prompts, ..
-        }) => assert_eq!(available_prompts, vec!["default", "ko"]),
+    match client.use_case_with("greeting", &UseCaseOptions::prompt("fr")) {
+        Err(Error::UnknownPrompt { prompt_names, .. }) => {
+            assert_eq!(prompt_names, vec!["default", "ko"])
+        }
         other => panic!("expected UnknownPrompt, got {other:?}"),
     }
-    match client.resolve_remote(&RemoteResolveRequest::new("greeting").prompt("fr")) {
+    match client.prompt_remote(&RemotePromptRequest::new("greeting").prompt("fr")) {
         Err(Error::Http {
             status, details, ..
         }) => {
             assert_eq!(status, 404);
             assert_eq!(details["reason"], "unknown_prompt");
-            assert_eq!(details["available_prompts"], json!(["default", "ko"]));
+            assert_eq!(details["prompt_names"], json!(["default", "ko"]));
         }
         other => panic!("expected a 404 for an unpinned prompt, got {other:?}"),
     }
 
     let missing = client
-        .resolve("greeting")
+        .use_case("greeting")
         .unwrap()
-        .render(json!({}))
+        .messages(json!({}))
         .expect_err("the template needs a name");
     assert_eq!(missing.missing_variable(), Some("name"));
     match client
-        .resolve_remote(&RemoteResolveRequest::new("greeting").variables(serde_json::Map::new()))
+        .prompt_remote(&RemotePromptRequest::new("greeting").variables(serde_json::Map::new()))
     {
         Err(Error::Http {
             status, details, ..
@@ -189,8 +188,8 @@ fn against_the_running_fixture_server() {
 
     // --- staging is a different pin ---------------------------------------
     let staging = client
-        .resolve_remote(&RemoteResolveRequest::new("greeting").environment("staging"))
-        .expect("staging resolves");
+        .prompt_remote(&RemotePromptRequest::new("greeting").environment("staging"))
+        .expect("staging use case works");
     assert_eq!(staging.model.as_deref(), Some("openai/gpt-4o-mini"));
     assert!(
         staging.params.contains_key("temperature"),
@@ -199,11 +198,11 @@ fn against_the_running_fixture_server() {
     );
 
     // --- monitoring logs: 202, then duplicates on a resend -----------------
-    let resolution = client.resolve("greeting").unwrap();
-    let messages = resolution.render_messages(json!({"name": "Ada"})).unwrap();
+    let resolution = client.use_case("greeting").unwrap();
+    let messages = resolution.messages(json!({"name": "Ada"})).unwrap();
 
-    let ids: Vec<String> = (0..3).map(|_| client.generation_id()).collect();
-    let mut first = GenerationRecord::from_resolution(&resolution, Status::Ok);
+    let ids: Vec<String> = (0..3).map(|_| client.log_id()).collect();
+    let mut first = resolution.log_record(Status::Ok);
     first.id = ids[0].clone();
     first.input = Some(json!({"variables": {"name": "Ada"}, "messages": messages}));
     first.output = Some(json!({"content": "Hello, Ada!"}));
@@ -213,9 +212,9 @@ fn against_the_running_fixture_server() {
     first.trace_id = Some("prompton-rust:live".to_string());
     first.usage = Some(Usage::tokens(38, 6).with_cost(0.000012, CostSource::Provider));
 
-    let mut second = GenerationRecord::from_resolution(&resolution, Status::Error);
+    let mut second = resolution.log_record(Status::Error);
     second.id = ids[1].clone();
-    second.error = Some(prompton::GenerationError::http(
+    second.error = Some(prompton::LogError::http(
         429,
         "rate limited by upstream provider",
     ));
@@ -224,9 +223,9 @@ fn against_the_running_fixture_server() {
     // A provider 5xx: `error.kind` has to reach the wire as `http_5xx`. `rate_limited` above is
     // spelled the same whether or not the SDK gets the underscore rule right, so only this record
     // proves the vocabulary the server enforces.
-    let mut third = GenerationRecord::from_resolution(&resolution, Status::Error);
+    let mut third = resolution.log_record(Status::Error);
     third.id = ids[2].clone();
-    third.error = Some(prompton::GenerationError::http(
+    third.error = Some(prompton::LogError::http(
         503,
         "upstream provider is unavailable",
     ));
@@ -254,9 +253,8 @@ fn against_the_running_fixture_server() {
     assert_eq!(resend.accepted, 0);
 
     // --- the convenience wrapper, end to end -------------------------------
-    let answer = client
-        .with_generation(
-            &resolution,
+    let answer = resolution
+        .track(
             CallMeta::new()
                 .variables(json!({"name": "Ada"}))
                 .input_messages(messages)
@@ -264,7 +262,7 @@ fn against_the_running_fixture_server() {
             || {
                 Ok(Completion::new(
                     "Hello, Ada!".to_string(),
-                    Outcome::text("Hello, Ada!")
+                    Result::text("Hello, Ada!")
                         .with_finish_reason("stop")
                         .with_usage(Usage::tokens(38, 6)),
                 ))
@@ -284,30 +282,30 @@ fn against_the_running_fixture_server() {
 
 /// Resolves locally and on the server and compares the two answers field for field.
 fn same_as_server(client: &Client, use_case: &str, prompt: Option<&str>, variables: Value) {
-    let options = ResolveOptions {
+    let options = UseCaseOptions {
         prompt: prompt.map(str::to_string),
     };
     let local = client
-        .resolve_with(use_case, &options)
+        .use_case_with(use_case, &options)
         .unwrap_or_else(|error| panic!("{use_case}: local resolution failed: {error}"));
 
-    let mut request = RemoteResolveRequest::new(use_case);
+    let mut request = RemotePromptRequest::new(use_case);
     request.prompt = prompt.map(str::to_string);
     if local.kind != Kind::Embedding {
         request.variables = Some(variables.clone().into());
     }
     let remote = client
-        .resolve_remote(&request)
+        .prompt_remote(&request)
         .unwrap_or_else(|error| panic!("{use_case}: server resolution failed: {error}"));
 
     assert_eq!(local.kind, remote.kind, "{use_case}: kind");
     assert_eq!(local.model, remote.model, "{use_case}: model");
     assert_eq!(local.model_id, remote.model_id, "{use_case}: model_id");
     assert_eq!(local.provider, remote.provider, "{use_case}: provider");
-    assert_eq!(local.params, remote.params, "{use_case}: effective_params");
+    assert_eq!(local.params, remote.params, "{use_case}: params");
     assert_eq!(
         local.provider_options, remote.provider_options,
-        "{use_case}: effective_provider_options"
+        "{use_case}: provider_options"
     );
     assert_eq!(
         local.deployment_id, remote.deployment_id,
@@ -319,8 +317,8 @@ fn same_as_server(client: &Client, use_case: &str, prompt: Option<&str>, variabl
     );
     assert_eq!(local.prompt, remote.prompt, "{use_case}: prompt");
     assert_eq!(
-        local.available_prompts, remote.available_prompts,
-        "{use_case}: prompts"
+        local.prompt_names, remote.prompt_names,
+        "{use_case}: prompt_names"
     );
     assert_eq!(
         local.prompt_version_id, remote.prompt_version_id,
@@ -334,7 +332,7 @@ fn same_as_server(client: &Client, use_case: &str, prompt: Option<&str>, variabl
 
     match local.kind {
         Kind::Chat => {
-            let rendered = local.render_messages(variables).unwrap();
+            let rendered = local.messages(variables).unwrap();
             assert_eq!(
                 Some(rendered.as_slice()),
                 remote.messages.as_deref(),
@@ -342,7 +340,7 @@ fn same_as_server(client: &Client, use_case: &str, prompt: Option<&str>, variabl
             );
         }
         Kind::Text => {
-            let rendered = local.render_text(variables).unwrap();
+            let rendered = local.text(variables).unwrap();
             assert_eq!(
                 Some(rendered.as_str()),
                 remote.text.as_deref(),

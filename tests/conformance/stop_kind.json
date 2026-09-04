@@ -141,7 +141,7 @@
     "language": "elixir",
     "repo": "https://github.com/polimo-dev/prompton-elixir",
     "sdk": "prompton_sdk",
-    "sdk_version": "0.1.0"
+    "sdk_version": "0.2.0"
   },
   "stop_kinds": [
     "stop",

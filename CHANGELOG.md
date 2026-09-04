@@ -4,6 +4,27 @@ All notable changes to `prompton-sdk` are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the crate follows
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## 0.2.0 — vocabulary rename
+
+### Changed
+
+- Replaced the public local-resolution flow with `Client::use_case`,
+  `Client::use_case_with`, `UseCase::messages`, `UseCase::text`, and `UseCase::track`.
+- Renamed provider-call output to `Result`, with `Result::from_openai` and
+  `Result::from_anthropic` helpers for common provider response shapes.
+- Renamed monitoring record types to `LogRecord` and `LogError`, changed the runtime log endpoint
+  to `POST /api/v1/logs`, and made the batch envelope `logs`.
+- Renamed the server prompt endpoint to `POST /api/v1/use-cases/{key}/prompt`, with `params`,
+  `provider_options`, `source`, and `prompt_names` in public response/log shapes.
+- Raised the deployed use-case document schema to `schema_version: 4` and documented
+  `use-cases.production.json` as the bundle filename.
+- Regenerated the Rust conformance fixtures as `use_case.json` and `log_record.json`.
+
+### Removed
+
+- Removed old public compatibility names for local lookup, remote prompt rendering, tracking,
+  source, provider result, and monitoring records.
+
 ## 0.1.0 — initial release
 
 The first release of the PromptOn SDK for Rust. It reads snapshot schema version 3.
@@ -13,20 +34,20 @@ The first release of the PromptOn SDK for Rust. It reads snapshot schema version
 - `Client`: one handle per process, cheap to clone, safe to share across threads. Configured with
   `Client::from_env()` or `Client::builder()`, with the precedence explicit option > environment
   variable > default.
-- **Snapshot store** with three tiers — memory, an atomically written disk cache with an
+- **Use-case document store** with three tiers — memory, an atomically written disk cache with an
   ETag/`Last-Modified` sidecar, and a bundle committed into the app — a 10-second memory cache, a
   background poller that refreshes with `If-None-Match`, `Retry-After` on `429`, and exponential
   backoff (×2 from the cache TTL, capped at five minutes) on `5xx`, timeouts and transport
-  failures. A refresh never blocks or fails a generation, and a document for another environment
+  failures. A refresh never blocks or fails a model call, and a document for another environment
   or project is never used.
 - **Local resolution** exactly as the runtime contract defines it, with `params` and
   `provider_options` layering, prompt selection by name and no fallback to `default`.
 - **Template engine**: the Liquid subset PromptOn allows (`for`, `if`/`elsif`/`else`, `unless`,
   `assign`, `break`, `continue`, filters `size`, `join`, `default`), plus `raw` passthrough, a
   static whitelist check (`template::lint`) and detected-variable analysis (`template::variables`).
-- **`/resolve` client** (`Client::resolve_remote`) with a per-TTL cache for variable-less calls and
+- **Remote prompt client** with a per-TTL cache for variable-less calls and
   a fallback to the cached answer while PromptOn is rate-limiting or failing.
-- **Monitoring logs**: `Client::log`, `Client::flush` and the `Client::with_generation` wrapper,
+- **Monitoring logs**: `Client::log`, `Client::flush` and the `Client::track` wrapper,
   behind a buffer that batches on size, bytes or time, sends at most 200 records per request, one
   environment per request, retries `429`/`5xx` with the same ids, splits a `413` in half, drops on
   other `4xx`, bounds the queue by dropping the oldest, and drains on shutdown.
@@ -73,6 +94,6 @@ rejects them) and on `undefined_variable_in_if_condition` (a false condition swa
 undefined variable). It deviates on two, both asserted in `every_non_normative_case_is_pinned`:
 
 - an unknown filter is a render error rather than being applied — the whitelist is also enforced
-  by `template::lint`, so such a template can never reach a snapshot;
+  by `template::lint`, so such a template can never reach a use-case document;
 - a map rendered into an output position produces compact JSON (`{"a":1}`) rather than Elixir's
   `inspect` output. Never rely on either.

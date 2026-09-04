@@ -15,40 +15,40 @@
 use serde_json::{Map, Value};
 
 use crate::error::Error;
-use crate::snapshot::{InputVariable, Kind, Message, PayloadPolicy, SnapshotDocument};
+use crate::snapshot::{InputVariable, Kind, Message, PayloadPolicy, UseCaseDocument};
 use crate::template::{self, Engine, TemplateError, Vars};
 
 /// The prompt name used when a call does not ask for one.
 pub const DEFAULT_PROMPT: &str = "default";
 
-/// Which tier the configuration behind a resolution came from.
+/// Which tier the use-case document came from.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ResolutionSource {
+pub enum Source {
     /// Fetched from PromptOn.
     Remote,
     /// Read from the local disk cache.
     Disk,
-    /// Read from the snapshot bundled into the build.
+    /// Read from the use-case document bundled into the build.
     Bundle,
-    /// Supplied by the app (test mode, or a hand-built resolution).
+    /// Supplied by the app (test mode, or a hand-built use-case document).
     Manual,
 }
 
-impl ResolutionSource {
-    /// The wire value used in a monitoring log's `resolution_source`.
+impl Source {
+    /// The wire value used in a monitoring log's `source`.
     pub fn as_str(self) -> &'static str {
         match self {
-            ResolutionSource::Remote => "remote",
-            ResolutionSource::Disk => "disk",
-            ResolutionSource::Bundle => "bundle",
-            ResolutionSource::Manual => "manual",
+            Source::Remote => "remote",
+            Source::Disk => "disk",
+            Source::Bundle => "bundle",
+            Source::Manual => "manual",
         }
     }
 }
 
 /// A rendered prompt.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Rendered {
+pub(crate) enum Rendered {
     /// A chat use case: the messages to send.
     Messages(Vec<Message>),
     /// A text use case: the prompt string to send.
@@ -57,27 +57,9 @@ pub enum Rendered {
     None,
 }
 
-impl Rendered {
-    /// The messages, when this is a chat prompt.
-    pub fn messages(&self) -> Option<&[Message]> {
-        match self {
-            Rendered::Messages(messages) => Some(messages),
-            _ => None,
-        }
-    }
-
-    /// The text, when this is a text prompt.
-    pub fn text(&self) -> Option<&str> {
-        match self {
-            Rendered::Text(text) => Some(text),
-            _ => None,
-        }
-    }
-}
-
 /// Everything one call needs: which model to call, with which parameters, and which prompt.
 #[derive(Debug, Clone, PartialEq)]
-pub struct Resolution {
+pub(crate) struct Resolution {
     /// The use case key that was resolved.
     pub use_case: String,
     /// Chat, text or embedding.
@@ -114,11 +96,11 @@ pub struct Resolution {
     pub input_schema: Vec<InputVariable>,
     /// The use case's payload storage policy.
     pub payload_policy: Option<PayloadPolicy>,
-    /// Which tier the snapshot came from.
-    pub source: ResolutionSource,
-    /// The ETag of the snapshot this resolution came from.
+    /// Which tier the use-case document came from.
+    pub source: Source,
+    /// The ETag of the use-case document this lookup came from.
     pub etag: Option<String>,
-    /// Warnings such as `missing_model: <id>`; empty against a healthy snapshot.
+    /// Warnings such as `missing_model: <id>`; empty against a healthy use-case document.
     pub warnings: Vec<String>,
 }
 
@@ -127,7 +109,7 @@ impl Resolution {
     ///
     /// Chat use cases render every message, text use cases render the template, and an embedding
     /// use case has no prompt at all ([`Rendered::None`]).
-    pub fn render(&self, vars: impl Into<Vars>) -> Result<Rendered, Error> {
+    pub(crate) fn render(&self, vars: impl Into<Vars>) -> Result<Rendered, Error> {
         let vars = vars.into();
         match (&self.messages, &self.text) {
             (Some(messages), _) => Ok(Rendered::Messages(template::render_messages(
@@ -141,7 +123,7 @@ impl Resolution {
     }
 
     /// Renders a chat prompt, or fails when this use case is not a chat one.
-    pub fn render_messages(&self, vars: impl Into<Vars>) -> Result<Vec<Message>, Error> {
+    pub(crate) fn render_messages(&self, vars: impl Into<Vars>) -> Result<Vec<Message>, Error> {
         match self.render(vars)? {
             Rendered::Messages(messages) => Ok(messages),
             _ => Err(Error::Template(TemplateError::Render(format!(
@@ -152,7 +134,7 @@ impl Resolution {
     }
 
     /// Renders a text prompt, or fails when this use case is not a text one.
-    pub fn render_text(&self, vars: impl Into<Vars>) -> Result<String, Error> {
+    pub(crate) fn render_text(&self, vars: impl Into<Vars>) -> Result<String, Error> {
         match self.render(vars)? {
             Rendered::Text(text) => Ok(text),
             _ => Err(Error::Template(TemplateError::Render(format!(
@@ -165,26 +147,17 @@ impl Resolution {
 
 /// Options for a single resolution.
 #[derive(Debug, Clone, Default)]
-pub struct ResolveOptions {
+pub(crate) struct ResolveOptions {
     /// The prompt name to pick; `None` means `default`. Ignored for an embedding use case.
     pub prompt: Option<String>,
 }
 
-impl ResolveOptions {
-    /// Picks a prompt by name.
-    pub fn prompt(name: impl Into<String>) -> ResolveOptions {
-        ResolveOptions {
-            prompt: Some(name.into()),
-        }
-    }
-}
-
 /// Resolves `use_case` against `document`.
-pub fn resolve(
-    document: &SnapshotDocument,
+pub(crate) fn resolve(
+    document: &UseCaseDocument,
     use_case_key: &str,
     options: &ResolveOptions,
-    source: ResolutionSource,
+    source: Source,
     etag: Option<&str>,
 ) -> Result<Resolution, Error> {
     let use_case = document
@@ -212,7 +185,7 @@ pub fn resolve(
                 return Err(Error::UnknownPrompt {
                     use_case: use_case_key.to_string(),
                     prompt: name,
-                    available_prompts,
+                    prompt_names: available_prompts,
                 })
             }
         }
@@ -293,9 +266,9 @@ mod tests {
     use super::*;
     use serde_json::json;
 
-    fn document() -> SnapshotDocument {
+    fn document() -> UseCaseDocument {
         let value = json!({
-            "schema_version": 3,
+            "schema_version": 4,
             "project": "demo",
             "environment": "production",
             "use_cases": {
@@ -325,17 +298,11 @@ mod tests {
                        "provider_options": {}}
             }
         });
-        SnapshotDocument::from_value(&value).unwrap().0
+        UseCaseDocument::from_value(&value).unwrap().0
     }
 
     fn resolve_key(key: &str, options: ResolveOptions) -> Result<Resolution, Error> {
-        resolve(
-            &document(),
-            key,
-            &options,
-            ResolutionSource::Remote,
-            Some("sha256-x"),
-        )
+        resolve(&document(), key, &options, Source::Remote, Some("sha256-x"))
     }
 
     #[test]
@@ -350,25 +317,39 @@ mod tests {
 
     #[test]
     fn renders_the_pinned_prompt() {
-        let resolution = resolve_key("greeting", ResolveOptions::prompt("ko")).unwrap();
+        let resolution = resolve_key(
+            "greeting",
+            ResolveOptions {
+                prompt: Some("ko".to_string()),
+            },
+        )
+        .unwrap();
         let rendered = resolution.render(json!({"name": "아다"})).unwrap();
-        assert_eq!(
-            rendered.messages().unwrap()[0].content,
-            "아다님 안녕.".to_string()
-        );
+        match rendered {
+            Rendered::Messages(messages) => {
+                assert_eq!(messages[0].content, "아다님 안녕.".to_string());
+            }
+            other => panic!("expected messages, got {other:?}"),
+        }
     }
 
     #[test]
     fn an_unpinned_prompt_name_is_an_error() {
-        let error = resolve_key("greeting", ResolveOptions::prompt("fr")).unwrap_err();
+        let error = resolve_key(
+            "greeting",
+            ResolveOptions {
+                prompt: Some("fr".to_string()),
+            },
+        )
+        .unwrap_err();
         match error {
             Error::UnknownPrompt {
                 prompt,
-                available_prompts,
+                prompt_names,
                 ..
             } => {
                 assert_eq!(prompt, "fr");
-                assert_eq!(available_prompts, vec!["default", "ko"]);
+                assert_eq!(prompt_names, vec!["default", "ko"]);
             }
             other => panic!("expected UnknownPrompt, got {other:?}"),
         }
@@ -376,7 +357,13 @@ mod tests {
 
     #[test]
     fn embedding_ignores_the_prompt_name() {
-        let resolution = resolve_key("embed", ResolveOptions::prompt("ko")).unwrap();
+        let resolution = resolve_key(
+            "embed",
+            ResolveOptions {
+                prompt: Some("ko".to_string()),
+            },
+        )
+        .unwrap();
         assert_eq!(resolution.prompt, None);
         assert_eq!(resolution.prompt_version_id, None);
         assert_eq!(resolution.render(()).unwrap(), Rendered::None);

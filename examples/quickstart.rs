@@ -1,7 +1,7 @@
-//! Resolve a use case, call a provider, log the generation.
+//! Resolve a use case, call a provider, log the model call.
 //!
 //! ```sh
-//! cargo run --example quickstart                       # offline, on a snapshot written inline
+//! cargo run --example quickstart                       # offline, on a use-case document written inline
 //! PTN_API_KEY=ptn_myproject_… cargo run --example quickstart   # against a real PromptOn
 //! ```
 //!
@@ -11,11 +11,11 @@
 use std::time::Duration;
 
 use prompton::{
-    CallMeta, Client, Completion, CostSource, Error, Message, Mode, Outcome, ResolveOptions, Usage,
+    CallMeta, Client, Completion, CostSource, Error, Message, Mode, Result, Usage, UseCaseOptions,
 };
 use serde_json::json;
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
+fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     let live = std::env::var("PTN_API_KEY").is_ok();
 
     let client = if live {
@@ -29,12 +29,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             .environment("production")
             .without_disk_cache()
             .build()?;
-        client.set_snapshot(&example_snapshot())?;
+        client.set_use_cases(&example_use_case_document())?;
         client
     };
 
-    // 1. Which model, which parameters, which prompt — from the snapshot in memory, no HTTP call.
-    let call = match client.resolve_with("greeting", &ResolveOptions::prompt("default")) {
+    // 1. Which model, which parameters, which prompt — from the use-case document in memory, no HTTP call.
+    let call = match client.use_case_with("greeting", &UseCaseOptions::prompt("default")) {
         Ok(call) => call,
         Err(Error::Unresolved(use_case)) => {
             eprintln!("{use_case} has no live deployment in this environment — deploy it first");
@@ -43,8 +43,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         Err(error) => return Err(error.into()),
     };
     println!(
-        "resolved {} → {} (deployment {} revision {:?}, source {})",
-        call.use_case,
+        "use_case {} → {} (deployment {} revision {:?}, source {})",
+        call.key,
         call.model.clone().unwrap_or_default(),
         call.deployment_id.clone().unwrap_or_default(),
         call.deployment_revision,
@@ -53,14 +53,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // 2. Render the pinned prompt with this call's variables.
     let variables = json!({"name": "Ada"});
-    let messages = call.render_messages(variables.clone())?;
+    let messages = call.messages(variables.clone())?;
     for message in &messages {
         println!("  [{}] {}", message.role, message.content);
     }
 
     // 3. Call the provider yourself, and let the SDK time it and log it.
-    let answer = client.with_generation(
-        &call,
+    let answer = call.track(
         CallMeta::new()
             .variables(variables)
             .input_messages(messages.clone())
@@ -72,11 +71,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 fake_provider(&call.model.clone().unwrap_or_default(), &messages);
             Ok(Completion::new(
                 content.clone(),
-                Outcome::text(content)
-                    .with_finish_reason("stop")
-                    .with_usage(
-                        Usage::tokens(tokens.0, tokens.1).with_cost(0.000012, CostSource::Provider),
-                    ),
+                Result::text(content).with_finish_reason("stop").with_usage(
+                    Usage::tokens(tokens.0, tokens.1).with_cost(0.000012, CostSource::Provider),
+                ),
             ))
         },
     )?;
@@ -109,10 +106,10 @@ fn fake_provider(model: &str, messages: &[Message]) -> (String, (i64, i64)) {
     (format!("Hello! (pretending to be {model})"), (words, 8))
 }
 
-/// The snapshot an app would normally fetch from PromptOn, inline so the example runs anywhere.
-fn example_snapshot() -> serde_json::Value {
+/// The use-case document an app would normally fetch from PromptOn, inline so the example runs anywhere.
+fn example_use_case_document() -> serde_json::Value {
     json!({
-        "schema_version": 3,
+        "schema_version": 4,
         "project": "example",
         "environment": "production",
         "use_cases": {

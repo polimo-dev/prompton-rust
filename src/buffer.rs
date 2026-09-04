@@ -1,5 +1,5 @@
 //! The monitoring-log buffer: batching, retries, and the rules that keep a log flush from ever
-//! touching a generation.
+//! touching a model call.
 //!
 //! Records are queued by [`crate::Client::log`] and sent by a background thread on whichever of
 //! the three triggers comes first — size, bytes or time. One request carries at most 200 records
@@ -29,7 +29,7 @@ use std::time::{Duration, Instant};
 
 use serde_json::{Map, Value};
 
-use crate::api::{Api, GenerationsAck};
+use crate::api::{Api, LogsAck};
 use crate::config::{Config, Mode, MAX_BACKOFF};
 use crate::error::Error;
 use crate::logger::Logger;
@@ -71,7 +71,7 @@ pub struct LogStats {
 
 /// What one [`crate::Client::flush`] achieved.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct FlushOutcome {
+pub struct FlushResult {
     /// Requests this flush completed; a failing send ends the flush and comes back as the error.
     pub requests: u64,
     /// Records the server stored.
@@ -232,14 +232,14 @@ impl Buffer {
     ///
     /// Returns the first error a send hit; the batch that failed stays queued, so a later flush
     /// (or the background thread) retries it with the same ids.
-    pub fn flush(&self, deadline: Option<Instant>) -> Result<FlushOutcome, Error> {
+    pub fn flush(&self, deadline: Option<Instant>) -> Result<FlushResult, Error> {
         self.drain_queue(deadline, false)
     }
 
     /// The shutdown drain: like [`Buffer::flush`], but it leaves an armed `Retry-After` window
     /// alone instead of sending into it. Whatever is still queued is lost, which is what best
     /// effort means when the process is exiting.
-    pub fn drain(&self, deadline: Option<Instant>) -> Result<FlushOutcome, Error> {
+    pub fn drain(&self, deadline: Option<Instant>) -> Result<FlushResult, Error> {
         self.drain_queue(deadline, true)
     }
 
@@ -247,8 +247,8 @@ impl Buffer {
         &self,
         deadline: Option<Instant>,
         respect_pause: bool,
-    ) -> Result<FlushOutcome, Error> {
-        let mut outcome = FlushOutcome::default();
+    ) -> Result<FlushResult, Error> {
+        let mut outcome = FlushResult::default();
         let mut error = None;
 
         loop {
@@ -358,7 +358,7 @@ impl Buffer {
     }
 
     /// Sends one batch and accounts for it, whatever happens.
-    fn send(&self, batch: Vec<Item>) -> Result<GenerationsAck, Error> {
+    fn send(&self, batch: Vec<Item>) -> Result<LogsAck, Error> {
         let result = self.send_batch(batch);
         {
             let mut state = self.lock();
@@ -368,9 +368,9 @@ impl Buffer {
         result
     }
 
-    fn send_batch(&self, batch: Vec<Item>) -> Result<GenerationsAck, Error> {
+    fn send_batch(&self, batch: Vec<Item>) -> Result<LogsAck, Error> {
         if batch.is_empty() {
-            return Ok(GenerationsAck::default());
+            return Ok(LogsAck::default());
         }
         let environment = batch[0].environment.clone();
         let records: Vec<Map<String, Value>> =
@@ -380,7 +380,7 @@ impl Buffer {
         // requests that failed, not only the ones that worked.
         self.lock().stats.requests += 1;
 
-        match self.api.post_generations(&environment, &records) {
+        match self.api.post_logs(&environment, &records) {
             Ok(ack) => {
                 let mut state = self.lock();
                 state.stats.accepted += ack.accepted as u64;
@@ -460,7 +460,7 @@ impl Buffer {
                 state.stats.dropped_undeliverable += batch.len() as u64;
                 drop(state);
                 self.logger.say_once(
-                    "generations-4xx",
+                    "logs-4xx",
                     format!(
                         "PromptOn refused a batch of {} monitoring logs and it will not be retried: {}",
                         records.len(),

@@ -2,21 +2,21 @@
 //!
 //! PromptOn is the control plane for your app's LLM prompts. For each **use case** and
 //! **environment** it holds one **pin**: a prompt version, one model, and its parameters. This SDK
-//! fetches a **snapshot** of those pins, renders the pinned prompt with this call's variables, and
+//! fetches a **use-case document** of those pins, renders the pinned prompt with this call's variables, and
 //! sends **monitoring logs** back in batches. Your app calls the provider itself, with its own key
 //! and its own HTTP client — PromptOn is config-fetch, **not a proxy**, so it is never in the
-//! request path, and if it is down your app keeps running on the last snapshot it received.
+//! request path, and if it is down your app keeps running on the last use-case document it received.
 //!
 //! ```no_run
-//! use prompton::{CallMeta, Client, Completion, Outcome};
+//! use prompton::{CallMeta, Client, Completion, Result};
 //!
 //! let prompton = Client::from_env()?;                       // PTN_HOST, PTN_API_KEY
-//! let call = prompton.resolve("greeting")?;                  // which model, params and prompt
-//! let messages = call.render_messages(serde_json::json!({"name": "Ada"}))?;
+//! let use_case = prompton.use_case("greeting")?;             // model, params and prompt
+//! let messages = use_case.messages(serde_json::json!({"name": "Ada"}))?;
 //!
-//! let answer = prompton.with_generation(&call, CallMeta::new().input_messages(messages.clone()), || {
-//!     let text = my_provider_call(&call.model, &messages);   // your key, your HTTP client
-//!     Ok(Completion::new(text.clone(), Outcome::text(text).with_finish_reason("stop")))
+//! let answer = use_case.track(CallMeta::new().input_messages(messages.clone()), || {
+//!     let text = my_provider_call(&use_case.model, &messages); // your key, your HTTP client
+//!     Ok(Completion::new(text.clone(), Result::text(text).with_finish_reason("stop")))
 //! })?;
 //! # fn my_provider_call(_model: &Option<String>, _messages: &[prompton::Message]) -> String { String::new() }
 //! # Ok::<(), Box<dyn std::error::Error>>(())
@@ -26,12 +26,12 @@
 //!
 //! | when | what happens |
 //! |---|---|
-//! | a poll times out, 5xx or 429 | the previous snapshot keeps serving; the caller sees nothing |
-//! | PromptOn is down at start | the disk cache, then the bundle, answer `resolve` |
-//! | nothing is cached anywhere | `resolve` returns [`Error::NotReady`] — the only error worth retrying |
+//! | a poll times out, 5xx or 429 | the previous use-case document keeps serving; the caller sees nothing |
+//! | PromptOn is down at start | the disk cache, then the bundle, answer `use_case` |
+//! | nothing is cached anywhere | `use_case` returns [`Error::NotReady`] — the only error worth retrying |
 //! | the use case has no live deployment | [`Error::Unresolved`] — a bug in the deployment, never a reason to use a hard-coded prompt |
 //! | the prompt name is not pinned | [`Error::UnknownPrompt`], with the names that are |
-//! | a monitoring log cannot be sent | it is retried, then dropped and counted; a generation never waits for it |
+//! | a monitoring log cannot be sent | it is retried, then dropped and counted; a model call never waits for it |
 //!
 //! # Configuration
 //!
@@ -59,31 +59,30 @@ mod store;
 pub mod template;
 pub mod uuidv7;
 
-pub use crate::api::{GenerationsAck, RejectedRecord};
-pub use crate::buffer::{FlushOutcome, LogStats, MAX_RECORDS_PER_REQUEST, MAX_REQUEST_BYTES};
+pub use crate::api::{LogsAck, RejectedRecord};
+pub use crate::buffer::{FlushResult, LogStats, MAX_RECORDS_PER_REQUEST, MAX_REQUEST_BYTES};
 pub use crate::config::{
     ClientBuilder, Config, DiskCache, LogConfig, Mode, DEFAULT_CACHE_TTL, DEFAULT_ENVIRONMENT,
     DEFAULT_HOST,
 };
-pub use crate::error::{Error, Result};
+pub use crate::error::Error;
+use crate::error::Result as SdkResult;
 pub use crate::http::{
     HttpClient, HttpRequest, HttpResponse, Method, SharedHttpClient, TransportError, UreqClient,
 };
 pub use crate::logger::LogSink;
 pub use crate::payload::{PayloadConfig, RedactHook};
 pub use crate::record::{
-    CallFailure, CallMeta, Completion, CostSource, ErrorKind, GenerationError, GenerationRecord,
-    Outcome, Sdk, Status, Usage, SDK_NAME,
+    CallFailure, CallMeta, Completion, CostSource, ErrorKind, LogError, LogRecord, Result, Sdk,
+    Status, Usage, SDK_NAME,
 };
-pub use crate::resolver::{
-    resolve as resolve_in, Rendered, Resolution, ResolutionSource, ResolveOptions, DEFAULT_PROMPT,
-};
+pub use crate::resolver::{Source, DEFAULT_PROMPT};
 pub use crate::snapshot::{
     Deployment, InputVariable, Kind, Message, Model, PayloadMode, PayloadPolicy, PromptVersion,
-    SnapshotDocument, UseCase, SCHEMA_VERSION,
+    UseCaseDocument, UseCaseSpec, SCHEMA_VERSION,
 };
 pub use crate::stop_kind::StopKind;
-pub use crate::store::SnapshotInfo;
+pub use crate::store::UseCaseDocumentInfo;
 pub use crate::template::{Engine, LintReason, TemplateError, Vars};
 
 use std::collections::HashMap;
@@ -98,6 +97,7 @@ use serde_json::{json, Map, Value};
 use crate::api::Api;
 use crate::buffer::Buffer;
 use crate::logger::Logger;
+use crate::resolver::{Resolution, ResolveOptions};
 use crate::store::Store;
 
 /// The SDK's version, as it appears in the `User-Agent` and in every record's `sdk` object.
@@ -110,7 +110,7 @@ struct Inner {
     api: Arc<Api>,
     logger: Logger,
     threads: Mutex<Vec<JoinHandle<()>>>,
-    resolve_cache: Mutex<HashMap<String, (Instant, Value)>>,
+    prompt_cache: Mutex<HashMap<String, (Instant, Value)>>,
 }
 
 impl Drop for Inner {
@@ -160,12 +160,12 @@ impl Client {
 
     /// A client configured entirely from `PTN_HOST`, `PTN_API_KEY`, `PTN_ENVIRONMENT` and
     /// `PTN_PROJECT`.
-    pub fn from_env() -> Result<Client> {
+    pub fn from_env() -> SdkResult<Client> {
         ClientBuilder::new().build()
     }
 
     /// Starts a client from an already-resolved [`Config`].
-    pub fn from_config(config: Config) -> Result<Client> {
+    pub fn from_config(config: Config) -> SdkResult<Client> {
         let logger = match &config.log_sink {
             Some(sink) => Logger::to_sink(sink.clone()),
             None => Logger::stderr(),
@@ -202,7 +202,7 @@ impl Client {
                 // A cold start with nothing cached: fetch once, then never block again.
                 if let Err(error) = store.refresh_now() {
                     logger.say(format!(
-                        "the first snapshot fetch failed ({error}); serving what is cached and retrying in the background"
+                        "the first use-case document fetch failed ({error}); serving what is cached and retrying in the background"
                     ));
                 }
             }
@@ -232,7 +232,7 @@ impl Client {
                 api,
                 logger,
                 threads: Mutex::new(threads),
-                resolve_cache: Mutex::new(HashMap::new()),
+                prompt_cache: Mutex::new(HashMap::new()),
             }),
         })
     }
@@ -243,34 +243,37 @@ impl Client {
     }
 
     // -----------------------------------------------------------------------
-    // resolution
+    // use cases
 
-    /// Resolves a use case with the `default` prompt.
-    pub fn resolve(&self, use_case: &str) -> Result<Resolution> {
-        self.resolve_with(use_case, &ResolveOptions::default())
+    /// Reads a use case with the `default` prompt.
+    pub fn use_case(&self, key: &str) -> SdkResult<UseCase> {
+        self.use_case_with(key, &UseCaseOptions::default())
     }
 
-    /// Resolves a use case, picking a prompt by name.
+    /// Reads a use case, picking a prompt by name.
     ///
-    /// This never touches the network: it reads the snapshot in memory. When that document is
+    /// This never touches the network: it reads the use-case document in memory. When that document is
     /// older than `cache_ttl` a refresh is triggered — on the background poller, or on a one-shot
     /// thread when the poller is off — and this call returns the document it already has.
-    pub fn resolve_with(&self, use_case: &str, options: &ResolveOptions) -> Result<Resolution> {
-        let resolution = self.inner.store.resolve(use_case, options);
+    pub fn use_case_with(&self, key: &str, options: &UseCaseOptions) -> SdkResult<UseCase> {
+        let options = ResolveOptions {
+            prompt: options.prompt.clone(),
+        };
+        let resolution = self.inner.store.resolve(key, &options);
         if !self.inner.config.poll
             && self.inner.config.remote_enabled()
             && self.inner.store.needs_refresh()
         {
             Store::refresh_in_background(self.inner.store.clone());
         }
-        resolution
+        resolution.map(|resolution| UseCase::from_resolution(self.clone(), resolution))
     }
 
     /// The prompt names the live deployment pins, sorted.
-    pub fn prompt_names(&self, use_case: &str) -> Result<Vec<String>> {
+    pub fn prompt_names(&self, use_case: &str) -> SdkResult<Vec<String>> {
         let entry = self.inner.store.current().ok_or_else(|| {
             Error::NotReady(format!(
-                "no snapshot for environment {:?}",
+                "no use-case document for environment {:?}",
                 self.inner.config.environment
             ))
         })?;
@@ -281,60 +284,62 @@ impl Client {
     }
 
     /// What the store currently holds: source, ETag, age and whether it is stale.
-    pub fn snapshot_info(&self) -> SnapshotInfo {
+    pub fn use_cases_info(&self) -> UseCaseDocumentInfo {
         self.inner.store.info()
     }
 
-    /// Fetches the snapshot once, synchronously. For scripts and cold starts; the background
+    /// Fetches the use-case document once, synchronously. For scripts and cold starts; the background
     /// poller does this on its own every `cache_ttl`.
-    pub fn refresh(&self) -> Result<()> {
+    pub fn refresh(&self) -> SdkResult<()> {
         self.inner.store.refresh_now()
     }
 
-    /// Writes the current snapshot (and its `.meta.json` sidecar) to `path`, ready to be committed
+    /// Writes the current use-case document (and its `.meta.json` sidecar) to `path`, ready to be committed
     /// as the app's bundle.
-    pub fn export_snapshot(&self, path: impl AsRef<Path>) -> Result<()> {
+    pub fn export_use_cases(&self, path: impl AsRef<Path>) -> SdkResult<()> {
         self.inner.store.export(path.as_ref())
     }
 
-    /// Installs a snapshot the app supplies, as `resolution_source: manual`. For tests and for
+    /// Installs a use-case document the app supplies, as `source: manual`. For tests and for
     /// apps that fetch the document themselves.
-    pub fn set_snapshot(&self, document: &Value) -> Result<()> {
-        self.set_snapshot_as(document, ResolutionSource::Manual)
+    pub fn set_use_cases(&self, document: &Value) -> SdkResult<()> {
+        self.set_use_cases_as(document, Source::Manual)
     }
 
-    /// Installs a snapshot the app supplies and says which tier it should be reported as.
-    pub fn set_snapshot_as(&self, document: &Value, source: ResolutionSource) -> Result<()> {
-        let (decoded, warnings) = SnapshotDocument::from_value(document)?;
+    /// Installs a use-case document the app supplies and says which tier it should be reported as.
+    pub fn set_use_cases_as(&self, document: &Value, source: Source) -> SdkResult<()> {
+        let (decoded, warnings) = UseCaseDocument::from_value(document)?;
         for warning in warnings {
-            self.inner.logger.say(format!("snapshot: {warning}"));
+            self.inner
+                .logger
+                .say(format!("use-case document: {warning}"));
         }
         let raw = serde_json::to_vec(document)?;
         self.inner.store.put_document(decoded, raw, source);
         Ok(())
     }
 
-    /// Installs a snapshot from a file, as `resolution_source: manual`.
-    pub fn set_snapshot_from_file(&self, path: impl AsRef<Path>) -> Result<()> {
+    /// Installs a use-case document from a file, as `source: manual`.
+    pub fn set_use_cases_from_file(&self, path: impl AsRef<Path>) -> SdkResult<()> {
         let bytes = std::fs::read(path)?;
         let value: Value = serde_json::from_slice(&bytes)?;
-        self.set_snapshot(&value)
+        self.set_use_cases(&value)
     }
 
     // -----------------------------------------------------------------------
-    // the /resolve client
+    // the remote prompt client
 
-    /// Asks the server to resolve, instead of resolving locally.
+    /// Asks the server to render a use case prompt, instead of rendering locally.
     ///
     /// This is the simple path and the smoke test: it always reflects the newest revision, with no
-    /// snapshot involved. It is **not** for a hot loop — cache the snapshot and use
-    /// [`Client::resolve`] there. A call without variables is cached for `cache_ttl` per (use
+    /// use-case document involved. It is **not** for a hot loop — cache the use-case document and use
+    /// [`Client::use_case`] there. A call without variables is cached for `cache_ttl` per (use
     /// case, prompt, environment) so the templates can be rendered locally, and while PromptOn is
     /// rate-limiting or failing the cached answer keeps being served.
-    pub fn resolve_remote(&self, request: &RemoteResolveRequest) -> Result<RemoteResolution> {
+    pub fn prompt_remote(&self, request: &RemotePromptRequest) -> SdkResult<RemotePrompt> {
         if !self.inner.config.remote_enabled() {
             return Err(Error::RemoteDisabled(
-                "resolve_remote needs an API key and live mode".to_string(),
+                "prompt_remote needs an API key and live mode".to_string(),
             ));
         }
 
@@ -351,13 +356,12 @@ impl Client {
         let cacheable = request.variables.is_none();
 
         if cacheable {
-            if let Some(cached) = self.cached_resolve(&key, self.inner.config.cache_ttl) {
-                return RemoteResolution::from_value(cached);
+            if let Some(cached) = self.cached_prompt_response(&key, self.inner.config.cache_ttl) {
+                return RemotePrompt::from_value(cached);
             }
         }
 
         let mut body = json!({
-            "use_case": request.use_case,
             "environment": environment,
         });
         if let Some(prompt) = &request.prompt {
@@ -367,23 +371,23 @@ impl Client {
             body["variables"] = variables.to_value();
         }
 
-        match self.inner.api.resolve(&body) {
+        match self.inner.api.prompt(&request.use_case, &body) {
             Ok(value) => {
                 if cacheable {
-                    if let Ok(mut cache) = self.inner.resolve_cache.lock() {
+                    if let Ok(mut cache) = self.inner.prompt_cache.lock() {
                         cache.insert(key, (Instant::now(), value.clone()));
                     }
                 }
-                RemoteResolution::from_value(value)
+                RemotePrompt::from_value(value)
             }
             Err(failure) => {
                 if failure.is_retryable() {
-                    if let Some(cached) = self.cached_resolve(&key, Duration::MAX) {
+                    if let Some(cached) = self.cached_prompt_response(&key, Duration::MAX) {
                         self.inner.logger.say(format!(
-                            "resolve failed ({}); serving the cached answer for {}",
+                            "prompt render failed ({}); serving the cached answer for {}",
                             failure.error, request.use_case
                         ));
-                        return RemoteResolution::from_value(cached);
+                        return RemotePrompt::from_value(cached);
                     }
                 }
                 Err(failure.error)
@@ -391,8 +395,8 @@ impl Client {
         }
     }
 
-    fn cached_resolve(&self, key: &str, max_age: Duration) -> Option<Value> {
-        let cache = self.inner.resolve_cache.lock().ok()?;
+    fn cached_prompt_response(&self, key: &str, max_age: Duration) -> Option<Value> {
+        let cache = self.inner.prompt_cache.lock().ok()?;
         let (at, value) = cache.get(key)?;
         if at.elapsed() <= max_age {
             Some(value.clone())
@@ -405,8 +409,8 @@ impl Client {
     // monitoring logs
 
     /// A fresh UUIDv7, for an app that wants the id before the call (to store its own row, or to
-    /// score the generation later).
-    pub fn generation_id(&self) -> String {
+    /// score the log later).
+    pub fn log_id(&self) -> String {
         uuidv7::generate()
     }
 
@@ -415,12 +419,12 @@ impl Client {
     /// The record is validated (`use_case`, `model`, `status`, `started_at`), given an `id` and an
     /// `sdk` object when it has none, put through the use case's payload policy, and queued. It
     /// never blocks on the network.
-    pub fn log(&self, record: GenerationRecord) -> Result<()> {
+    pub fn log(&self, record: LogRecord) -> SdkResult<()> {
         self.log_in(record, None)
     }
 
     /// Queues one monitoring log for a specific environment; batches never mix environments.
-    pub fn log_in(&self, mut record: GenerationRecord, environment: Option<String>) -> Result<()> {
+    pub fn log_in(&self, mut record: LogRecord, environment: Option<String>) -> SdkResult<()> {
         if record.id.trim().is_empty() {
             record.id = uuidv7::generate();
         }
@@ -457,7 +461,7 @@ impl Client {
     ///
     /// The shutdown paths ([`Client::shutdown`] and dropping the last clone) do not use this:
     /// they drain what can go out immediately and respect a `Retry-After` the server asked for.
-    pub fn flush(&self) -> Result<FlushOutcome> {
+    pub fn flush(&self) -> SdkResult<FlushResult> {
         self.inner.buffer.flush(None)
     }
 
@@ -482,7 +486,7 @@ impl Client {
     /// flow changes. A `Ok(Completion)` is logged as `status: ok`; a [`CallFailure`] as
     /// `status: error`, keeping the usage and output when the provider answered but the app could
     /// not use the answer; a panic is logged as `error.kind: app` and then resumed.
-    pub fn with_generation<T, F>(
+    fn track_resolution<T, F>(
         &self,
         resolution: &Resolution,
         meta: CallMeta,
@@ -535,7 +539,7 @@ impl Client {
                     timing,
                     Status::Error,
                     None,
-                    Some(&GenerationError::new(ErrorKind::App, message)),
+                    Some(&LogError::new(ErrorKind::App, message)),
                 );
                 self.log_quietly(log);
                 std::panic::resume_unwind(panic)
@@ -543,7 +547,7 @@ impl Client {
         }
     }
 
-    fn log_quietly(&self, record: GenerationRecord) {
+    fn log_quietly(&self, record: LogRecord) {
         if let Err(error) = self.log(record) {
             self.inner
                 .logger
@@ -572,8 +576,8 @@ impl Client {
         }
     }
 
-    /// How many snapshot requests the SDK has made. Tests assert that the cache TTL holds.
-    pub fn snapshot_fetch_count(&self) -> u64 {
+    /// How many use-case document requests the SDK has made. Tests assert that the cache TTL holds.
+    pub fn use_case_fetch_count(&self) -> u64 {
         self.inner.store.fetch_count()
     }
 }
@@ -588,9 +592,116 @@ fn panic_message(panic: &(dyn std::any::Any + Send)) -> String {
     }
 }
 
-/// A request for the server-side `/resolve` endpoint.
+/// Options for reading a use case.
 #[derive(Debug, Clone, Default)]
-pub struct RemoteResolveRequest {
+pub struct UseCaseOptions {
+    /// The prompt name to pick; `None` means `default`.
+    pub prompt: Option<String>,
+}
+
+impl UseCaseOptions {
+    /// Picks a prompt by name.
+    pub fn prompt(name: impl Into<String>) -> UseCaseOptions {
+        UseCaseOptions {
+            prompt: Some(name.into()),
+        }
+    }
+}
+
+/// A deployed use case: model configuration plus the pinned prompt.
+#[derive(Debug, Clone)]
+pub struct UseCase {
+    client: Client,
+    resolution: Resolution,
+    /// The use case key.
+    pub key: String,
+    /// Chat, text or embedding.
+    pub kind: Kind,
+    /// The provider-side model string to send to the provider.
+    pub model: Option<String>,
+    /// The catalog id of that model.
+    pub model_id: Option<String>,
+    /// The provider name.
+    pub provider: Option<String>,
+    /// The layered parameters.
+    pub params: Map<String, Value>,
+    /// The layered provider options.
+    pub provider_options: Map<String, Value>,
+    /// The live deployment's id.
+    pub deployment_id: Option<String>,
+    /// The live deployment's revision number.
+    pub deployment_revision: Option<i64>,
+    /// The prompt name that was chosen.
+    pub prompt: Option<String>,
+    /// Every prompt name the live revision pins.
+    pub prompt_names: Vec<String>,
+    /// Which tier the document came from.
+    pub source: Source,
+    /// The pinned prompt version id.
+    pub prompt_version_id: Option<String>,
+    /// The pinned prompt version number.
+    pub prompt_version_number: Option<i64>,
+    /// The ETag of the use case document this came from.
+    pub etag: Option<String>,
+    /// Warnings such as `missing_model: <id>`.
+    pub warnings: Vec<String>,
+}
+
+impl UseCase {
+    fn from_resolution(client: Client, resolution: Resolution) -> UseCase {
+        UseCase {
+            client,
+            key: resolution.use_case.clone(),
+            kind: resolution.kind.clone(),
+            model: resolution.model.clone(),
+            model_id: resolution.model_id.clone(),
+            provider: resolution.provider.clone(),
+            params: resolution.params.clone(),
+            provider_options: resolution.provider_options.clone(),
+            deployment_id: resolution.deployment_id.clone(),
+            deployment_revision: resolution.deployment_revision,
+            prompt: resolution.prompt.clone(),
+            prompt_names: resolution.available_prompts.clone(),
+            source: resolution.source,
+            prompt_version_id: resolution.prompt_version_id.clone(),
+            prompt_version_number: resolution.prompt_version_number,
+            etag: resolution.etag.clone(),
+            warnings: resolution.warnings.clone(),
+            resolution,
+        }
+    }
+
+    /// Renders a chat prompt, or fails when this use case is not a chat one.
+    pub fn messages(&self, vars: impl Into<Vars>) -> SdkResult<Vec<Message>> {
+        self.resolution.render_messages(vars)
+    }
+
+    /// Renders a text prompt, or fails when this use case is not a text one.
+    pub fn text(&self, vars: impl Into<Vars>) -> SdkResult<String> {
+        self.resolution.render_text(vars)
+    }
+
+    /// Times a provider call, builds the monitoring log, and queues it.
+    pub fn track<T, F>(
+        &self,
+        meta: CallMeta,
+        call: F,
+    ) -> std::result::Result<Completion<T>, CallFailure>
+    where
+        F: FnOnce() -> std::result::Result<Completion<T>, CallFailure>,
+    {
+        self.client.track_resolution(&self.resolution, meta, call)
+    }
+
+    /// Starts a manual log record from this use case's deployment evidence.
+    pub fn log_record(&self, status: Status) -> LogRecord {
+        LogRecord::from_resolution(&self.resolution, status)
+    }
+}
+
+/// A request for the server-side prompt endpoint.
+#[derive(Debug, Clone, Default)]
+pub struct RemotePromptRequest {
     /// The use case key.
     pub use_case: String,
     /// The prompt name; `None` means `default`.
@@ -602,37 +713,37 @@ pub struct RemoteResolveRequest {
     pub variables: Option<Vars>,
 }
 
-impl RemoteResolveRequest {
+impl RemotePromptRequest {
     /// A request for one use case's `default` prompt.
-    pub fn new(use_case: impl Into<String>) -> RemoteResolveRequest {
-        RemoteResolveRequest {
+    pub fn new(use_case: impl Into<String>) -> RemotePromptRequest {
+        RemotePromptRequest {
             use_case: use_case.into(),
-            ..RemoteResolveRequest::default()
+            ..RemotePromptRequest::default()
         }
     }
 
     /// Picks a prompt by name.
-    pub fn prompt(mut self, prompt: impl Into<String>) -> RemoteResolveRequest {
+    pub fn prompt(mut self, prompt: impl Into<String>) -> RemotePromptRequest {
         self.prompt = Some(prompt.into());
         self
     }
 
     /// Reads another environment than the client's.
-    pub fn environment(mut self, environment: impl Into<String>) -> RemoteResolveRequest {
+    pub fn environment(mut self, environment: impl Into<String>) -> RemotePromptRequest {
         self.environment = Some(environment.into());
         self
     }
 
     /// Asks the server to render with these variables.
-    pub fn variables(mut self, variables: impl Into<Vars>) -> RemoteResolveRequest {
+    pub fn variables(mut self, variables: impl Into<Vars>) -> RemotePromptRequest {
         self.variables = Some(variables.into());
         self
     }
 }
 
-/// What `POST /resolve` answered.
+/// What `POST /use-cases/{key}/prompt` answered.
 #[derive(Debug, Clone, PartialEq)]
-pub struct RemoteResolution {
+pub struct RemotePrompt {
     /// The use case key.
     pub use_case: String,
     /// Chat, text or embedding.
@@ -644,7 +755,7 @@ pub struct RemoteResolution {
     /// The prompt name that was used.
     pub prompt: Option<String>,
     /// Every prompt name the live revision pins.
-    pub available_prompts: Vec<String>,
+    pub prompt_names: Vec<String>,
     /// The provider-side model string.
     pub model: Option<String>,
     /// The catalog id of that model.
@@ -665,17 +776,17 @@ pub struct RemoteResolution {
     pub text: Option<String>,
     /// Server-side warnings, such as `missing_model: <id>`.
     pub warnings: Vec<String>,
-    /// The snapshot ETag this answer was resolved from.
+    /// The use-case document ETag this answer was resolved from.
     pub etag: Option<String>,
     /// The response as it arrived.
     pub raw: Value,
 }
 
-impl RemoteResolution {
-    fn from_value(value: Value) -> Result<RemoteResolution> {
+impl RemotePrompt {
+    fn from_value(value: Value) -> SdkResult<RemotePrompt> {
         let object = value
             .as_object()
-            .ok_or_else(|| Error::Transport("resolve returned a non-object body".to_string()))?
+            .ok_or_else(|| Error::Transport("prompt returned a non-object body".to_string()))?
             .clone();
 
         let string = |key: &str| -> Option<String> {
@@ -689,7 +800,7 @@ impl RemoteResolution {
                 .unwrap_or_default()
         };
 
-        Ok(RemoteResolution {
+        Ok(RemotePrompt {
             use_case: string("use_case").unwrap_or_default(),
             kind: object
                 .get("kind")
@@ -711,8 +822,8 @@ impl RemoteResolution {
                 .and_then(|deployment| deployment.get("revision"))
                 .and_then(Value::as_i64),
             prompt: string("prompt"),
-            available_prompts: object
-                .get("prompts")
+            prompt_names: object
+                .get("prompt_names")
                 .and_then(Value::as_array)
                 .map(|names| {
                     names
@@ -725,8 +836,8 @@ impl RemoteResolution {
             model: string("model"),
             model_id: string("model_id"),
             provider: string("provider"),
-            params: map("effective_params"),
-            provider_options: map("effective_provider_options"),
+            params: map("params"),
+            provider_options: map("provider_options"),
             prompt_version_id: object
                 .get("prompt_version")
                 .and_then(|version| version.get("id"))
@@ -756,24 +867,27 @@ impl RemoteResolution {
         })
     }
 
-    /// Renders the templates this answer carries, locally, with the Liquid subset.
-    ///
-    /// Only meaningful for an answer fetched **without** variables; when the server rendered
-    /// already, there is nothing left to substitute.
-    pub fn render(&self, vars: impl Into<Vars>) -> Result<Rendered> {
+    /// Renders the chat messages this answer carries, or fails when it is not a chat answer.
+    pub fn messages(&self, vars: impl Into<Vars>) -> SdkResult<Vec<Message>> {
         let vars = vars.into();
-        match (&self.messages, &self.text) {
-            (Some(messages), _) => Ok(Rendered::Messages(template::render_messages(
-                messages,
-                &vars,
-                Engine::Liquid,
-            )?)),
-            (None, Some(text)) => Ok(Rendered::Text(template::render(
-                text,
-                &vars,
-                Engine::Liquid,
-            )?)),
-            (None, None) => Ok(Rendered::None),
+        match &self.messages {
+            Some(messages) => Ok(template::render_messages(messages, &vars, Engine::Liquid)?),
+            None => Err(Error::Template(TemplateError::Render(format!(
+                "use case {} has no chat messages to render",
+                self.use_case
+            )))),
+        }
+    }
+
+    /// Renders the text template this answer carries, or fails when it is not a text answer.
+    pub fn text(&self, vars: impl Into<Vars>) -> SdkResult<String> {
+        let vars = vars.into();
+        match &self.text {
+            Some(text) => Ok(template::render(text, &vars, Engine::Liquid)?),
+            None => Err(Error::Template(TemplateError::Render(format!(
+                "use case {} has no text template to render",
+                self.use_case
+            )))),
         }
     }
 }

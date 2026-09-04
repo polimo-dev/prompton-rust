@@ -8,16 +8,18 @@ use crate::template::TemplateError;
 /// The three errors an app is expected to branch on are [`Error::UnknownUseCase`],
 /// [`Error::Unresolved`] and [`Error::UnknownPrompt`]: each of them is a bug in the deployment or
 /// in the call, never a reason to fall back to a hard-coded prompt. [`Error::NotReady`] is the
-/// only one an app should retry, and it can only happen before the first snapshot has been
-/// obtained from any tier.
+/// only one an app should retry, and it can only happen before the first use-case document has
+/// been obtained from any tier.
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
 pub enum Error {
-    /// No snapshot in memory, on disk or in the bundle, and PromptOn could not be reached.
-    #[error("PromptOn is unreachable and no snapshot is cached (memory, disk or bundle): {0}")]
+    /// No use-case document in memory, on disk or in the bundle, and PromptOn could not be reached.
+    #[error(
+        "PromptOn is unreachable and no use-case document is cached (memory, disk or bundle): {0}"
+    )]
     NotReady(String),
 
-    /// The snapshot has no use case with that key.
+    /// The use-case document has no use case with that key.
     #[error("unknown use case: {0}")]
     UnknownUseCase(String),
 
@@ -27,23 +29,21 @@ pub enum Error {
 
     /// The live deployment pins no prompt version under that name. There is no fallback to
     /// `default`.
-    #[error(
-        "use case {use_case} pins no prompt named {prompt:?} (available: {available_prompts:?})"
-    )]
+    #[error("use case {use_case} pins no prompt named {prompt:?} (available: {prompt_names:?})")]
     UnknownPrompt {
-        /// The use case that was resolved.
+        /// The use case that was read.
         use_case: String,
         /// The prompt name that was asked for.
         prompt: String,
         /// The prompt names the live revision does pin.
-        available_prompts: Vec<String>,
+        prompt_names: Vec<String>,
     },
 
     /// Rendering failed: a missing variable, a rejected construct, or a bad template.
     #[error(transparent)]
     Template(#[from] TemplateError),
 
-    /// A snapshot document could not be decoded.
+    /// A use-case document could not be decoded.
     #[error(transparent)]
     Decode(#[from] DecodeError),
 

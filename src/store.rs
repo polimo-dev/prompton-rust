@@ -1,4 +1,4 @@
-//! The snapshot store: three tiers, one background refresh, and a rule that a generation never
+//! The snapshot store: three tiers, one background refresh, and a rule that a model call never
 //! fails because PromptOn did.
 //!
 //! * **Memory** holds the last good document and answers every resolve, with no HTTP call inside
@@ -23,18 +23,18 @@ use std::time::{Duration, Instant, SystemTime};
 
 use serde_json::{json, Value};
 
-use crate::api::{Api, SnapshotFetch};
+use crate::api::{Api, UseCaseFetch};
 use crate::config::{Config, MAX_BACKOFF};
 use crate::error::Error;
 use crate::logger::Logger;
-use crate::resolver::{self, Resolution, ResolutionSource, ResolveOptions};
-use crate::snapshot::SnapshotDocument;
+use crate::resolver::{self, Resolution, ResolveOptions, Source};
+use crate::snapshot::UseCaseDocument;
 
 /// What the store currently holds, for dashboards and health checks.
 #[derive(Debug, Clone, PartialEq)]
-pub struct SnapshotInfo {
+pub struct UseCaseDocumentInfo {
     /// Which tier the document came from; `None` when there is no document at all.
-    pub source: Option<ResolutionSource>,
+    pub source: Option<Source>,
     /// The document's ETag.
     pub etag: Option<String>,
     /// The document's `Last-Modified`.
@@ -57,11 +57,11 @@ pub struct SnapshotInfo {
 
 #[derive(Debug)]
 pub(crate) struct Entry {
-    pub document: Arc<SnapshotDocument>,
+    pub document: Arc<UseCaseDocument>,
     pub raw: Arc<Vec<u8>>,
     pub etag: Option<String>,
     pub last_modified: Option<String>,
-    pub source: ResolutionSource,
+    pub source: Source,
     pub fetched_at: SystemTime,
     pub refreshed_at: Instant,
     pub stale: bool,
@@ -104,16 +104,16 @@ impl Store {
             return;
         }
         if let Some(path) = self.config.disk_cache_path() {
-            if self.load_file(&path, ResolutionSource::Disk) {
+            if self.load_file(&path, Source::Disk) {
                 return;
             }
         }
         if let Some(path) = self.config.bundle.clone() {
-            self.load_file(&path, ResolutionSource::Bundle);
+            self.load_file(&path, Source::Bundle);
         }
     }
 
-    fn load_file(&self, path: &Path, source: ResolutionSource) -> bool {
+    fn load_file(&self, path: &Path, source: Source) -> bool {
         let bytes = match fs::read(path) {
             Ok(bytes) => bytes,
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => return false,
@@ -126,7 +126,7 @@ impl Store {
         };
 
         // A partially written or corrupt file is ignored, not an error: the next poll fixes it.
-        let (document, warnings) = match SnapshotDocument::from_json(&bytes) {
+        let (document, warnings) = match UseCaseDocument::from_json(&bytes) {
             Ok(decoded) => decoded,
             Err(error) => {
                 self.logger.say(format!(
@@ -170,7 +170,7 @@ impl Store {
     }
 
     /// A document for another environment or project is never used.
-    fn accept(&self, document: &SnapshotDocument) -> Result<(), String> {
+    fn accept(&self, document: &UseCaseDocument) -> Result<(), String> {
         if let Some(environment) = &document.environment {
             if environment != &self.config.environment {
                 return Err(format!(
@@ -198,7 +198,7 @@ impl Store {
     }
 
     /// Replaces the document from the app's own hands (test mode, or a manual override).
-    pub fn put_document(&self, document: SnapshotDocument, raw: Vec<u8>, source: ResolutionSource) {
+    pub fn put_document(&self, document: UseCaseDocument, raw: Vec<u8>, source: Source) {
         self.install(Entry {
             document: Arc::new(document),
             raw: Arc::new(raw),
@@ -213,7 +213,11 @@ impl Store {
 
     /// Resolves against the document in memory, triggering a background refresh when it is older
     /// than the cache TTL. Never blocks on the network.
-    pub fn resolve(&self, use_case: &str, options: &ResolveOptions) -> Result<Resolution, Error> {
+    pub(crate) fn resolve(
+        &self,
+        use_case: &str,
+        options: &ResolveOptions,
+    ) -> Result<Resolution, Error> {
         let entry = self.current().ok_or_else(|| {
             Error::NotReady(format!(
                 "no snapshot for environment {:?}",
@@ -310,19 +314,19 @@ impl Store {
         self.fetches.fetch_add(1, Ordering::Relaxed);
 
         match self.api.snapshot(&self.config.environment, etag.as_deref()) {
-            Ok(SnapshotFetch::NotModified {
+            Ok(UseCaseFetch::NotModified {
                 etag,
                 last_modified,
             }) => {
                 self.confirm(etag, last_modified);
                 Ok(())
             }
-            Ok(SnapshotFetch::Fetched {
+            Ok(UseCaseFetch::Fetched {
                 body,
                 etag,
                 last_modified,
             }) => {
-                let (document, warnings) = match SnapshotDocument::from_json(&body) {
+                let (document, warnings) = match UseCaseDocument::from_json(&body) {
                     Ok(decoded) => decoded,
                     Err(error) => {
                         self.record_failure(None);
@@ -348,7 +352,7 @@ impl Store {
                     raw: Arc::new(body),
                     etag: etag.clone(),
                     last_modified: last_modified.clone(),
-                    source: ResolutionSource::Remote,
+                    source: Source::Remote,
                     fetched_at: SystemTime::now(),
                     refreshed_at: Instant::now(),
                     stale: false,
@@ -394,7 +398,7 @@ impl Store {
                     last_modified: last_modified.or_else(|| entry.last_modified.clone()),
                     // The server confirmed the document we hold is current, so it is no longer a
                     // disk or bundle guess: it is what PromptOn serves.
-                    source: ResolutionSource::Remote,
+                    source: Source::Remote,
                     fetched_at: SystemTime::now(),
                     refreshed_at: Instant::now(),
                     stale: false,
@@ -431,13 +435,13 @@ impl Store {
         self.fetches.load(Ordering::Relaxed)
     }
 
-    pub fn info(&self) -> SnapshotInfo {
+    pub fn info(&self) -> UseCaseDocumentInfo {
         let state = match self.state.lock() {
             Ok(state) => state,
             Err(poisoned) => poisoned.into_inner(),
         };
         match &state.entry {
-            None => SnapshotInfo {
+            None => UseCaseDocumentInfo {
                 source: None,
                 etag: None,
                 last_modified: None,
@@ -449,7 +453,7 @@ impl Store {
                 stale: true,
                 failures: state.failures,
             },
-            Some(entry) => SnapshotInfo {
+            Some(entry) => UseCaseDocumentInfo {
                 source: Some(entry.source),
                 etag: entry.etag.clone(),
                 last_modified: entry.last_modified.clone(),
@@ -458,7 +462,7 @@ impl Store {
                 schema_version: Some(entry.document.schema_version),
                 fetched_at: Some(entry.fetched_at),
                 age: Some(entry.refreshed_at.elapsed()),
-                stale: entry.stale || entry.source != ResolutionSource::Remote,
+                stale: entry.stale || entry.source != Source::Remote,
                 failures: state.failures,
             },
         }
@@ -553,7 +557,7 @@ impl Store {
             }
 
             drop(state);
-            // A refresh never blocks or fails a generation: the error is logged inside fetch().
+            // A refresh never blocks or fails a model call: the error is logged inside fetch().
             let _ = store.fetch();
         }
     }

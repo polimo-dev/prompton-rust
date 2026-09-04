@@ -12,9 +12,9 @@ use serde_json::{json, Map, Value};
 use crate::error::Error;
 use crate::http::{parse_retry_after, HttpRequest, HttpResponse, Method, SharedHttpClient};
 
-/// The answer to a conditional snapshot request.
+/// The answer to a conditional deployed-use-case document request.
 #[derive(Debug, Clone)]
-pub(crate) enum SnapshotFetch {
+pub(crate) enum UseCaseFetch {
     /// `304`: the document we already hold is current.
     NotModified {
         etag: Option<String>,
@@ -44,9 +44,9 @@ pub struct RejectedRecord {
     pub message: String,
 }
 
-/// What `POST /generations` answered.
+/// What `POST /logs` answered.
 #[derive(Debug, Clone, Default, Deserialize, PartialEq)]
-pub struct GenerationsAck {
+pub struct LogsAck {
     /// How many records this request stored.
     #[serde(default)]
     pub accepted: usize,
@@ -102,7 +102,7 @@ impl Api {
         &self,
         environment: &str,
         etag: Option<&str>,
-    ) -> Result<SnapshotFetch, RemoteFailure> {
+    ) -> Result<UseCaseFetch, RemoteFailure> {
         let mut headers = self.headers(false);
         if let Some(etag) = etag {
             headers.push(("if-none-match".to_string(), etag.to_string()));
@@ -111,7 +111,7 @@ impl Api {
         let response = self.send(HttpRequest {
             method: Method::Get,
             url: format!(
-                "{}/snapshot?environment={}",
+                "{}/use-cases?environment={}",
                 self.base_url,
                 encode(environment)
             ),
@@ -124,12 +124,12 @@ impl Api {
         let last_modified = response.header("last-modified").map(str::to_string);
 
         match response.status {
-            200 => Ok(SnapshotFetch::Fetched {
+            200 => Ok(UseCaseFetch::Fetched {
                 body: response.body,
                 etag,
                 last_modified,
             }),
-            304 => Ok(SnapshotFetch::NotModified {
+            304 => Ok(UseCaseFetch::NotModified {
                 etag,
                 last_modified,
             }),
@@ -137,10 +137,10 @@ impl Api {
         }
     }
 
-    pub fn resolve(&self, body: &Value) -> Result<Value, RemoteFailure> {
+    pub fn prompt(&self, use_case: &str, body: &Value) -> Result<Value, RemoteFailure> {
         let response = self.send(HttpRequest {
             method: Method::Post,
-            url: format!("{}/resolve", self.base_url),
+            url: format!("{}/use-cases/{}/prompt", self.base_url, encode(use_case)),
             headers: self.headers(true),
             body: Some(serde_json::to_vec(body).unwrap_or_default()),
             timeout: self.timeout,
@@ -150,26 +150,22 @@ impl Api {
             response.json().ok_or_else(|| RemoteFailure {
                 status: Some(200),
                 retry_after: None,
-                error: Error::Transport("resolve returned a body that is not JSON".to_string()),
+                error: Error::Transport("prompt returned a body that is not JSON".to_string()),
             })
         } else {
             Err(self.failure(response))
         }
     }
 
-    pub fn post_generations(
+    pub fn post_logs(
         &self,
         environment: &str,
         records: &[Map<String, Value>],
-    ) -> Result<GenerationsAck, RemoteFailure> {
-        let body = json!({ "generations": records });
+    ) -> Result<LogsAck, RemoteFailure> {
+        let body = json!({ "logs": records });
         let response = self.send(HttpRequest {
             method: Method::Post,
-            url: format!(
-                "{}/generations?environment={}",
-                self.base_url,
-                encode(environment)
-            ),
+            url: format!("{}/logs?environment={}", self.base_url, encode(environment)),
             headers: self.headers(true),
             body: Some(serde_json::to_vec(&body).unwrap_or_default()),
             timeout: self.timeout,
@@ -273,7 +269,7 @@ mod tests {
 
     #[test]
     fn reads_a_rejected_list() {
-        let ack: GenerationsAck = serde_json::from_value(json!({
+        let ack: LogsAck = serde_json::from_value(json!({
             "accepted": 1, "duplicates": 0,
             "rejected": [{"index": 0, "id": "x", "code": "invalid_request", "message": "id must be a UUID"}]
         }))

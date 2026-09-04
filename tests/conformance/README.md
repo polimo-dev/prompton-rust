@@ -3,7 +3,7 @@
 These JSON files are the cross-language contract for PromptOn SDKs. Every SDK — Python, Node.js,
 Go, Ruby, Java, Kotlin, Rust — copies this directory into its own test suite and asserts that it
 reproduces the expected values byte for byte. When two SDKs disagree about how a prompt renders,
-which model a snapshot resolves to, or how a monitoring log is truncated, an app that talks to
+which model a use-case document selects, or how a monitoring log is truncated, an app that talks to
 PromptOn from two languages gets two different answers. That is what these files prevent.
 
 Nothing here is hand-written. `scripts/gen_conformance.exs` in this repository executes the Elixir
@@ -14,7 +14,7 @@ mix run scripts/gen_conformance.exs
 ```
 
 The Elixir SDK is the reference implementation, and the PromptOn server reuses its pure modules
-(`SnapshotData`, `Resolver`, `Template`, `StopKind`) directly, so these fixtures also describe the
+its pure document, lookup, template and stop-kind modules directly, so these fixtures also describe the
 server. `test/prompton_sdk/conformance_test.exs` runs every case back through the SDK, which is
 what keeps the files from drifting.
 
@@ -23,10 +23,10 @@ Each file records the commit it was generated from in `generated_from.commit`.
 | File | What it pins down | Cases |
 |---|---|---|
 | `template.json` | Prompt rendering: the Liquid subset PromptOn allows | 72 render (4 non-normative), 10 lint, 5 detected-variables |
-| `resolve.json` | Snapshot + use case (+ prompt name) → model, params, prompt version, rendered messages | 3 snapshots, 15 cases |
+| `use_case.json` | Use-case document + use case (+ prompt name) → model, params, prompt version, rendered messages | 3 documents, 15 cases |
 | `truncation.json` | The payload policy the SDK applies to a monitoring log before sending it | 19 cases + 5 sampling buckets |
 | `stop_kind.json` | Provider `finish_reason` → PromptOn `stop_kind` | 22 cases |
-| `generation_record.json` | Complete monitoring-log records and the batch envelope | 5 records |
+| `log_record.json` | Complete monitoring-log records and the batch envelope | 5 records |
 
 ## How to run the cases
 
@@ -48,34 +48,34 @@ For each case, render `template` with `variables` using the engine named in `eng
 `lint_cases` exercise the static whitelist check (`expect.lint` is `"ok"`, or `"error"` plus the
 `reasons` in order). `variables_cases` exercise "which input variables does this template read".
 Both are optional for an SDK that only renders: the server rejects a non-conforming template when
-the prompt version is committed, so a template that fails lint can never reach a snapshot.
+the prompt version is committed, so a template that fails lint can never reach a use-case document.
 
-### resolve.json
+### use_case.json
 
-`snapshots` is a map of reference name → a complete schema-v3 snapshot document, exactly as
-`GET /api/v1/snapshot?environment=…` returns it. For each case, decode
-`snapshots[snapshot_ref]`, resolve `use_case` with the optional `prompt` name, and — when
-`variables` is present — render the resulting prompt. This is precisely what `POST /api/v1/resolve`
+`documents` is a map of reference name → a complete schema-v4 use-case document, exactly as
+`GET /api/v1/use-cases?environment=…` returns it. For each case, decode
+`documents[document_ref]`, read `use_case` with the optional `prompt` name, and — when
+`variables` is present — render the resulting prompt. This is precisely what `POST /api/v1/use-cases/{key}/prompt`
 does on the server.
 
 ### truncation.json
 
 For each case, apply the payload policy in `policy` (and the SDK config in `config`, when present)
-to `generation`, and compare with `expect.generation`.
+to `log`, and compare with `expect.log`.
 
 ### stop_kind.json
 
 For each case, normalise `finish_reason` and compare with `stop_kind`; `truncated` is what your
 "was the output cut off" helper must return.
 
-### generation_record.json
+### log_record.json
 
 These are golden shapes rather than executable cases: `records[].record` is a complete monitoring
-log as `POST /api/v1/generations` accepts it, and `batch_envelope.request` wraps all of them in one
+log as `POST /api/v1/logs` accepts it, and `batch_envelope.request` wraps all of them in one
 batch. Use them to check your record builder's output shape and your batch envelope. `field_rules`
 lists what the server validates.
 
-**A generation id must be a UUIDv7, not a UUIDv4.** The request-level validation accepts any UUID
+**A log id must be a UUIDv7, not a UUIDv4.** The request-level validation accepts any UUID
 string, but the column is a UUIDv7 type and a v4 id fails on write — the record comes back in
 `rejected` with `record could not be stored`, which does not say why. Generate 48 bits of unix
 milliseconds, the version nibble 7, then random bits.
@@ -122,7 +122,7 @@ whitespace control (`{%-`, `-%}`, `{{-`, `-}}`) is rejected by lint.
 
 The filter whitelist is enforced by lint and by the server at commit time, **not** by the renderer.
 The reference implementation happily applies `upcase` at render time. An SDK that raises instead is
-equally correct, because such a template can never reach a snapshot.
+equally correct, because such a template can never reach a use-case document.
 
 `engine: "raw"` returns the source verbatim without parsing it. It exists for prompts whose text
 genuinely contains `{{` or `{%`.
@@ -130,29 +130,29 @@ genuinely contains `{{` or `{%`.
 ### Merge order
 
 ```
-effective_params            = use_case.default_params  <- deployment.params
-effective_provider_options  = model.provider_options   <- deployment.provider_options
+params            = use_case.default_params  <- deployment.params
+provider_options  = model.provider_options   <- deployment.provider_options
 ```
 
 Both are **shallow** merges where the right side wins. A nested map on the right replaces the left
 side whole; it is not merged into it. An override value of `null` is kept as `null`, not deleted —
 apps rely on sending `"only": null` to clear a provider restriction.
 
-### Resolution
+### Use-case lookup
 
 A deployment revision is a **pin**, not a router. It is one model plus one pinned prompt version
 per prompt name. At request time the only selection axis is the prompt name (default `"default"`),
-and the environment is a request parameter that decides which snapshot you fetched.
+and the environment is a request parameter that decides which use-case document you fetched.
 
 * Unknown use case key → `unknown_use_case`.
 * Use case exists but has no deployment in this environment → `unresolved`.
 * The deployment pins no version under the requested name → `unknown_prompt`. **There is no
   fallback to `"default"`**: shipping English to a request that asked for `"ko"` is worse than an
-  error. The expectation carries `available_prompts`, which is what the server's 404 lists.
+  error. The expectation carries `prompt_names`, which is what the server's 404 lists.
 * Use case of kind `embedding` has no prompt at all: `prompt` and `prompt_version` are `null`, and
   a prompt name passed with the request is ignored rather than rejected.
-* If the snapshot references a prompt version or model id it does not contain, resolution still
-  succeeds with those fields `null` and a warning. A healthy server never emits such a snapshot.
+* If the use-case document references a prompt version or model id it does not contain, lookup still
+  succeeds with those fields `null` and a warning. A healthy server never emits such a document.
 
 ### Truncation arithmetic
 
