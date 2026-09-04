@@ -126,12 +126,14 @@ that generations still happen on the cached snapshot.
 | a variable the template needs is missing | `Error::Template(TemplateError::MissingVariable(name))`, with `error.missing_variable()` |
 | a monitoring log cannot be sent | it is retried with the same ids, then dropped and counted in `client.log_stats()` |
 | the queue is full | the **oldest** records are dropped and counted |
+| the process exits while PromptOn is unhealthy | the queue is drained best effort in a few seconds; an armed `Retry-After` is respected rather than sent into, so shutting down is never held up by a backoff |
 
 ## Monitoring logs
 
 `with_generation` times your provider call, builds the record and queues it. `log` takes a record
 you built yourself (after a streaming call, say), and `flush` sends the queue now and waits — call
-it before a short-lived process exits.
+it before a short-lived process exits. `flush` is the one path that sends even inside an armed
+`Retry-After`, because you asked explicitly; the background sender and shutdown both wait.
 
 ```rust
 let result = prompton.with_generation(
@@ -210,8 +212,20 @@ makes no HTTP calls but resolves from the disk cache and the bundle, which is wh
 
 `tests/conformance/` is the cross-language contract every PromptOn SDK reproduces: template
 rendering, resolution, payload truncation, `stop_kind` normalisation and golden monitoring-log
-records. `cargo test` executes every case. `tests/live_fixture.rs` runs the same SDK against a real
-server and is skipped unless `PTN_API_KEY` is set:
+records. `cargo test` executes every **normative** case. Two qualifications, so you know exactly
+what the suite proves:
+
+- the four cases in `template.json` marked `normative: false` are reference-implementation
+  behaviour other SDKs need not reproduce, so the normative runner skips them — but they are not
+  left unexamined: `every_non_normative_case_is_pinned` asserts what this SDK does with each.
+  Two match the reference; two are deviations, listed in [CHANGELOG.md](CHANGELOG.md).
+- `generation_record.json` holds golden record *shapes*, not executable cases. They are checked
+  for round-trip fidelity, for the required-field and UUIDv7 rules, for the closed `error.kind`
+  vocabulary (all seven kinds, both directions on the wire), and against this SDK's own record
+  builder.
+
+`tests/live_fixture.rs` runs the same SDK against a real server and is skipped unless
+`PTN_API_KEY` is set:
 
 ```sh
 cargo test

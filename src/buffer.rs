@@ -18,6 +18,10 @@
 //! While a batch is being retried it stays at the head of the queue and later records queue
 //! behind it. Above `max_queue` the **oldest** records are dropped and counted, so a PromptOn
 //! outage costs bounded memory, never the app's stability.
+//!
+//! Shutdown drains whatever can go out immediately and then stops. It neither waits out nor
+//! sends into an armed `Retry-After`, and it gives up after [`SHUTDOWN_DRAIN`], so a process
+//! exiting during a PromptOn outage is never held for the backoff ladder.
 
 use std::collections::VecDeque;
 use std::sync::{Arc, Condvar, Mutex};
@@ -36,6 +40,12 @@ pub const MAX_RECORDS_PER_REQUEST: usize = 200;
 pub const MAX_REQUEST_BYTES: usize = 4_000_000;
 /// The first retry delay; it doubles up to five minutes.
 pub const RETRY_BASE: Duration = Duration::from_secs(1);
+/// How long the background thread keeps draining after [`Buffer::stop`] before it gives up.
+///
+/// Shutdown is best effort and best effort has to be *quick*: a process on its way out must not
+/// be held for a retry pause the server asked for, so the drain neither waits one out nor sends
+/// into it.
+pub const SHUTDOWN_DRAIN: Duration = Duration::from_secs(5);
 
 /// What the buffer has done so far.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -48,7 +58,8 @@ pub struct LogStats {
     pub dropped_too_large: u64,
     /// Records dropped after a batch exhausted its retries or hit a 4xx.
     pub dropped_undeliverable: u64,
-    /// Requests the buffer has sent.
+    /// Requests the buffer has sent, whatever the answer was — a 4xx, a 5xx and a transport
+    /// failure all count, so send volume stays visible during an outage.
     pub requests: u64,
     /// Records the server stored.
     pub accepted: u64,
@@ -61,7 +72,7 @@ pub struct LogStats {
 /// What one [`crate::Client::flush`] achieved.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct FlushOutcome {
-    /// Requests sent by this flush.
+    /// Requests this flush completed; a failing send ends the flush and comes back as the error.
     pub requests: u64,
     /// Records the server stored.
     pub accepted: u64,
@@ -91,6 +102,7 @@ struct State {
     attempts: u32,
     next_attempt: Option<Instant>,
     stop: bool,
+    stopped_at: Option<Instant>,
     stats: LogStats,
     captured: Vec<Map<String, Value>>,
 }
@@ -203,12 +215,39 @@ impl Buffer {
         stats
     }
 
+    /// Whether a failed batch has asked to be left alone until its `Retry-After` has elapsed.
+    fn paused(&self) -> bool {
+        let now = Instant::now();
+        self.lock()
+            .next_attempt
+            .map(|next| next > now)
+            .unwrap_or(false)
+    }
+
     /// Sends everything queued and waits for the answers, including the batches the background
     /// thread is already sending.
+    ///
+    /// This is the user-called path, so it sends now even inside an armed `Retry-After` window:
+    /// the caller asked explicitly. The background thread and the shutdown drain both wait.
     ///
     /// Returns the first error a send hit; the batch that failed stays queued, so a later flush
     /// (or the background thread) retries it with the same ids.
     pub fn flush(&self, deadline: Option<Instant>) -> Result<FlushOutcome, Error> {
+        self.drain_queue(deadline, false)
+    }
+
+    /// The shutdown drain: like [`Buffer::flush`], but it leaves an armed `Retry-After` window
+    /// alone instead of sending into it. Whatever is still queued is lost, which is what best
+    /// effort means when the process is exiting.
+    pub fn drain(&self, deadline: Option<Instant>) -> Result<FlushOutcome, Error> {
+        self.drain_queue(deadline, true)
+    }
+
+    fn drain_queue(
+        &self,
+        deadline: Option<Instant>,
+        respect_pause: bool,
+    ) -> Result<FlushOutcome, Error> {
         let mut outcome = FlushOutcome::default();
         let mut error = None;
 
@@ -217,6 +256,9 @@ impl Buffer {
                 if Instant::now() >= deadline {
                     break;
                 }
+            }
+            if respect_pause && self.paused() {
+                break;
             }
             let batch = match self.take_batch(true) {
                 Some(batch) => batch,
@@ -334,10 +376,13 @@ impl Buffer {
         let records: Vec<Map<String, Value>> =
             batch.iter().map(|item| item.record.clone()).collect();
 
+        // Counted before the answer is known: an operator watching an outage needs to see the
+        // requests that failed, not only the ones that worked.
+        self.lock().stats.requests += 1;
+
         match self.api.post_generations(&environment, &records) {
             Ok(ack) => {
                 let mut state = self.lock();
-                state.stats.requests += 1;
                 state.stats.accepted += ack.accepted as u64;
                 state.stats.duplicates += ack.duplicates as u64;
                 state.stats.rejected += ack.rejected.len() as u64;
@@ -427,11 +472,13 @@ impl Buffer {
         }
     }
 
-    /// Stops the background thread after one last best-effort drain.
+    /// Stops the background thread after one last best-effort drain, bounded by
+    /// [`SHUTDOWN_DRAIN`].
     pub fn stop(&self) {
         {
             let mut state = self.lock();
             state.stop = true;
+            state.stopped_at.get_or_insert_with(Instant::now);
         }
         self.signal.notify_all();
     }
@@ -446,17 +493,36 @@ impl Buffer {
         }
 
         loop {
-            let action = {
+            // `stopping` records the value of `stop` the action was decided under, so the
+            // wait below can tell "nothing changed, go to sleep" from "stop() arrived while the
+            // lock was released, decide again".
+            let (action, stopping) = {
                 let state = buffer.lock();
                 let now = Instant::now();
-                if state.stop && state.total() == 0 && state.in_flight == 0 {
-                    Action::Stop
-                } else if let Some(next) = state.next_attempt.filter(|next| *next > now) {
+                // A batch that failed asked to be left alone until `next_attempt`.
+                let pause = state.next_attempt.filter(|next| *next > now);
+
+                let action = if state.stop {
+                    // Shutdown drains what can go out right now. It never waits a retry pause
+                    // out and never sends into one, and it gives up after SHUTDOWN_DRAIN — so
+                    // dropping the last Client returns in milliseconds even when PromptOn is
+                    // unhealthy, instead of spinning through a 4-minute backoff ladder.
+                    let spent = state
+                        .stopped_at
+                        .map(|at| now.saturating_duration_since(at) >= SHUTDOWN_DRAIN)
+                        .unwrap_or(false);
+                    if state.in_flight > 0 {
+                        Action::Wait(Duration::from_millis(20))
+                    } else if pause.is_some() || spent || state.total() == 0 {
+                        Action::Stop
+                    } else {
+                        Action::Send
+                    }
+                } else if let Some(next) = pause {
                     Action::Wait(next.saturating_duration_since(now))
                 } else if state.total() == 0 {
                     Action::Wait(buffer.config.log.flush_interval)
-                } else if state.stop
-                    || !state.pending.is_empty()
+                } else if !state.pending.is_empty()
                     || state.queue.len() >= buffer.config.log.flush_size
                     || state.bytes >= buffer.config.log.flush_bytes
                 {
@@ -473,7 +539,8 @@ impl Buffer {
                         }
                         None => Action::Send,
                     }
-                }
+                };
+                (action, state.stop)
             };
 
             match action {
@@ -486,7 +553,7 @@ impl Buffer {
                 }
                 Action::Wait(wait) => {
                     let state = buffer.lock();
-                    if state.stop {
+                    if state.stop != stopping {
                         continue;
                     }
                     let _ = buffer.signal.wait_timeout(state, wait);

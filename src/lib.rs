@@ -117,10 +117,12 @@ impl Drop for Inner {
     fn drop(&mut self) {
         self.store.stop();
         // Best effort: give the queue one last chance to reach PromptOn before the process exits.
+        // `drain` rather than `flush`, so an armed `Retry-After` is left alone instead of being
+        // sent into, and the exit stays quick.
         if self.config.mode == Mode::Live {
             let _ = self
                 .buffer
-                .flush(Some(Instant::now() + Duration::from_secs(5)));
+                .drain(Some(Instant::now() + Duration::from_secs(5)));
         }
         self.buffer.stop();
         if let Ok(mut threads) = self.threads.lock() {
@@ -448,9 +450,13 @@ impl Client {
     /// Sends everything queued and waits for the answers, including the batches the background
     /// thread is already sending.
     ///
-    /// This is what a script or a shutdown path wants: it sends now, ignoring the size and time
-    /// triggers and the retry pause the background thread honours. A batch that fails stays
-    /// queued with the same ids, and the error comes back.
+    /// This is what a script wants: it sends now, ignoring the size and time triggers *and* the
+    /// retry pause the background thread honours — you asked explicitly, so the request goes out
+    /// even inside an armed `Retry-After` window. A batch that fails stays queued with the same
+    /// ids, and the error comes back.
+    ///
+    /// The shutdown paths ([`Client::shutdown`] and dropping the last clone) do not use this:
+    /// they drain what can go out immediately and respect a `Retry-After` the server asked for.
     pub fn flush(&self) -> Result<FlushOutcome> {
         self.inner.buffer.flush(None)
     }
@@ -545,14 +551,18 @@ impl Client {
         }
     }
 
-    /// Stops the background threads after a final flush. Dropping the last clone does this too.
+    /// Stops the background threads after a final best-effort drain of the monitoring-log queue.
+    /// Dropping the last clone does this too.
+    ///
+    /// The drain is bounded: it never waits out or sends into an armed `Retry-After`, and it
+    /// gives up after a few seconds, so shutting down while PromptOn is unhealthy is quick.
     pub fn shutdown(&self) {
         self.inner.store.stop();
         if self.inner.config.mode == Mode::Live {
             let _ = self
                 .inner
                 .buffer
-                .flush(Some(Instant::now() + Duration::from_secs(5)));
+                .drain(Some(Instant::now() + Duration::from_secs(5)));
         }
         self.inner.buffer.stop();
         if let Ok(mut threads) = self.inner.threads.lock() {

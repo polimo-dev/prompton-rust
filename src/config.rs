@@ -446,8 +446,8 @@ mod tests {
     #[test]
     fn reads_the_project_from_the_key() {
         assert_eq!(
-            project_from_key("ptn_sdkfixture_6yfe6v2ipbld676gved6w5jjcuqcq4fu").as_deref(),
-            Some("sdkfixture")
+            project_from_key("ptn_myproject_0000000000000000000000000000").as_deref(),
+            Some("myproject")
         );
         assert_eq!(project_from_key("nope"), None);
     }

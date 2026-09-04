@@ -56,6 +56,67 @@ fn every_golden_record_round_trips() {
     }
 }
 
+/// `error.kind` is a closed vocabulary and the server rejects anything outside it, so every kind
+/// the SDK can emit is pinned against `field_rules["error.kind"]` — the wire spelling, both ways,
+/// and the status mapping that picks one.
+#[test]
+fn every_error_kind_matches_the_field_rule() {
+    let data = support::conformance("generation_record.json");
+    let rule = data["field_rules"]["error.kind"]
+        .as_str()
+        .expect("the error.kind rule");
+    let allowed: Vec<&str> = rule.split('|').map(str::trim).collect();
+    assert_eq!(
+        allowed,
+        vec![
+            "http_4xx",
+            "http_5xx",
+            "rate_limited",
+            "timeout",
+            "transport",
+            "parse",
+            "app"
+        ]
+    );
+
+    let kinds = [
+        ErrorKind::Http4xx,
+        ErrorKind::Http5xx,
+        ErrorKind::RateLimited,
+        ErrorKind::Timeout,
+        ErrorKind::Transport,
+        ErrorKind::Parse,
+        ErrorKind::App,
+    ];
+    assert_eq!(kinds.len(), allowed.len());
+
+    for (kind, wire) in kinds.iter().zip(allowed.iter()) {
+        assert_eq!(
+            serde_json::to_value(kind).unwrap(),
+            json!(wire),
+            "{kind:?} must serialise as {wire}"
+        );
+        let parsed: ErrorKind = serde_json::from_value(json!(wire))
+            .unwrap_or_else(|error| panic!("{wire} must deserialise: {error}"));
+        assert_eq!(parsed, *kind);
+
+        let error = GenerationError::new(*kind, "x");
+        assert_eq!(serde_json::to_value(&error).unwrap()["kind"], json!(wire));
+    }
+
+    // The status mapping the wrapper uses, and the record it ends up putting on the wire.
+    assert_eq!(ErrorKind::from_status(404), ErrorKind::Http4xx);
+    assert_eq!(ErrorKind::from_status(429), ErrorKind::RateLimited);
+    assert_eq!(ErrorKind::from_status(503), ErrorKind::Http5xx);
+
+    let mut record =
+        GenerationRecord::new("greeting", "openai/gpt-4o-mini", prompton::Status::Error);
+    record.error = Some(GenerationError::http(503, "upstream is down"));
+    let value = serde_json::to_value(&record).unwrap();
+    assert_eq!(value["error"]["kind"], json!("http_5xx"));
+    assert_eq!(value["error"]["status"], json!(503));
+}
+
 #[test]
 fn the_batch_envelope_is_one_object_with_a_generations_array() {
     let data = support::conformance("generation_record.json");

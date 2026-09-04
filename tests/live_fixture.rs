@@ -202,7 +202,7 @@ fn against_the_running_fixture_server() {
     let resolution = client.resolve("greeting").unwrap();
     let messages = resolution.render_messages(json!({"name": "Ada"})).unwrap();
 
-    let ids: Vec<String> = (0..2).map(|_| client.generation_id()).collect();
+    let ids: Vec<String> = (0..3).map(|_| client.generation_id()).collect();
     let mut first = GenerationRecord::from_resolution(&resolution, Status::Ok);
     first.id = ids[0].clone();
     first.input = Some(json!({"variables": {"name": "Ada"}, "messages": messages}));
@@ -221,16 +221,36 @@ fn against_the_running_fixture_server() {
     ));
     second.latency_ms = Some(1503);
 
+    // A provider 5xx: `error.kind` has to reach the wire as `http_5xx`. `rate_limited` above is
+    // spelled the same whether or not the SDK gets the underscore rule right, so only this record
+    // proves the vocabulary the server enforces.
+    let mut third = GenerationRecord::from_resolution(&resolution, Status::Error);
+    third.id = ids[2].clone();
+    third.error = Some(prompton::GenerationError::http(
+        503,
+        "upstream provider is unavailable",
+    ));
+    third.latency_ms = Some(212);
+    assert_eq!(
+        serde_json::to_value(&third).unwrap()["error"]["kind"],
+        json!("http_5xx")
+    );
+
     client.log(first.clone()).unwrap();
     client.log(second.clone()).unwrap();
+    client.log(third.clone()).unwrap();
     let outcome = client.flush().expect("the batch is accepted");
-    assert_eq!(outcome.accepted, 2, "{outcome:?}");
-    assert_eq!(outcome.rejected, 0);
+    assert_eq!(outcome.accepted, 3, "{outcome:?}");
+    assert_eq!(
+        outcome.rejected, 0,
+        "the server refused a record: {outcome:?}"
+    );
 
     client.log(first).unwrap();
     client.log(second).unwrap();
+    client.log(third).unwrap();
     let resend = client.flush().expect("the resend is accepted");
-    assert_eq!(resend.duplicates, 2, "the same ids must be absorbed");
+    assert_eq!(resend.duplicates, 3, "the same ids must be absorbed");
     assert_eq!(resend.accepted, 0);
 
     // --- the convenience wrapper, end to end -------------------------------
@@ -256,8 +276,8 @@ fn against_the_running_fixture_server() {
     assert_eq!(wrapped.accepted, 1);
 
     let stats = client.log_stats();
-    assert_eq!(stats.accepted, 3);
-    assert_eq!(stats.duplicates, 2);
+    assert_eq!(stats.accepted, 4);
+    assert_eq!(stats.duplicates, 3);
     assert_eq!(stats.dropped_undeliverable, 0);
     assert_eq!(stats.queued, 0);
 }

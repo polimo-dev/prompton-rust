@@ -37,3 +37,42 @@ The first release of the PromptOn SDK for Rust. It reads snapshot schema version
   only).
 - The cross-language conformance suite (`tests/conformance/`) and an environment-gated live test
   against a running PromptOn server (`tests/live_fixture.rs`).
+
+### Fixed before release
+
+Found by an adversarial review of the first cut of this crate, and fixed before 0.1.0 was tagged.
+Each one now has a regression test.
+
+- `error.kind` reached the wire as `http4xx` / `http5xx` instead of the contract's `http_4xx` /
+  `http_5xx` (`#[serde(rename_all = "snake_case")]` puts no underscore before a digit), so the
+  server rejected every monitoring log for a provider 4xx or 5xx — exactly the records that make
+  error rates meaningful. The two variants now spell their wire value out, and
+  `every_error_kind_matches_the_field_rule` pins all seven kinds in both directions against the
+  conformance fixture. The live test now sends a 503 record as well as a 429.
+- UUIDv7 generation used a non-atomic load/store on its RNG state, so concurrent callers could
+  derive identical random words and emit duplicate ids. Because `id` is the batch idempotency key,
+  those records were silently absorbed by the server as duplicates and lost. The step is now a
+  single `fetch_add`, and `ids_are_unique_across_threads` generates 160,000 ids on 8 threads.
+- Dropping the last `Client` while a monitoring-log batch was in its retry pause spun at 100% CPU
+  until the backoff ladder ran out — over four minutes. Shutdown now neither waits out nor sends
+  into an armed `Retry-After`, and gives up after five seconds.
+
+### Changed before release
+
+- `Client::shutdown` and dropping the last `Client` honour an armed `Retry-After` instead of
+  sending into it. An explicit `Client::flush()` still sends now — you asked for it — and says so
+  in its documentation.
+- `LogStats::requests` counts every request the buffer made, not only the ones that succeeded,
+  so send volume stays visible during an outage.
+
+### Known deviations from the reference implementation
+
+`tests/conformance/template.json` marks four cases `normative: false`. This SDK matches the
+reference on `whitespace_control_renders` (the renderer honours `{%-`/`-%}`, `template::lint`
+rejects them) and on `undefined_variable_in_if_condition` (a false condition swallows the
+undefined variable). It deviates on two, both asserted in `every_non_normative_case_is_pinned`:
+
+- an unknown filter is a render error rather than being applied — the whitelist is also enforced
+  by `template::lint`, so such a template can never reach a snapshot;
+- a map rendered into an output position produces compact JSON (`{"a":1}`) rather than Elixir's
+  `inspect` output. Never rely on either.

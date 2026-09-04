@@ -33,8 +33,12 @@ pub enum Status {
 #[serde(rename_all = "snake_case")]
 pub enum ErrorKind {
     /// The provider answered 4xx (other than 429).
+    // `rename_all = "snake_case"` puts no underscore before a digit, so both of these have to
+    // spell out the contract's wire value. Getting it wrong makes the server reject the record.
+    #[serde(rename = "http_4xx")]
     Http4xx,
     /// The provider answered 5xx.
+    #[serde(rename = "http_5xx")]
     Http5xx,
     /// The provider answered 429, or its own rate limiter fired.
     RateLimited,

@@ -276,6 +276,11 @@ fn any_other_4xx_drops_the_batch_without_retrying() {
     );
     assert_eq!(client.log_stats().dropped_undeliverable, 2);
     assert_eq!(client.log_stats().queued, 0);
+    assert_eq!(
+        client.log_stats().requests,
+        2,
+        "a request that failed still counts as a request"
+    );
 
     let said = lines.lock().unwrap();
     let complaints: Vec<_> = said
@@ -565,6 +570,75 @@ fn shutdown_drains_the_queue() {
     client.shutdown();
 
     assert_eq!(sent.load(Ordering::Relaxed), 7);
+}
+
+/// Dropping the last clone must not wait out — or send into — a retry pause. The bug this pins
+/// down span the whole backoff ladder at 100% CPU inside `Drop`, so a CLI or a container exiting
+/// during a PromptOn outage hung for minutes.
+#[test]
+fn dropping_a_client_mid_backoff_returns_at_once() {
+    let server = StubServer::start(|_, _| {
+        StubResponse::json(503, r#"{"error":{"code":"unavailable","message":"down"}}"#)
+    });
+    let client = quiet_builder(&server)
+        .log_config(LogConfig {
+            flush_size: 1000,
+            flush_interval: Duration::from_secs(600),
+            max_attempts: 8,
+            ..LogConfig::default()
+        })
+        .build()
+        .unwrap();
+
+    client.log(record("greeting")).unwrap();
+    assert!(client.flush().is_err(), "the stub answers 503");
+    let after_flush = server.request_count();
+    assert_eq!(after_flush, 1);
+    assert_eq!(client.log_stats().requests, 1);
+    assert_eq!(client.log_stats().queued, 1, "the batch stays queued");
+
+    let start = Instant::now();
+    drop(client);
+    let elapsed = start.elapsed();
+
+    assert!(
+        elapsed < Duration::from_secs(2),
+        "drop took {elapsed:?}; shutdown must not wait out the backoff"
+    );
+    assert_eq!(
+        server.request_count(),
+        after_flush,
+        "shutdown must not send inside the retry pause the server asked for"
+    );
+}
+
+/// The same, through the explicit shutdown path.
+#[test]
+fn shutdown_mid_backoff_returns_at_once() {
+    let server =
+        StubServer::start(|_, _| StubResponse::empty(429).with_header("Retry-After", "120"));
+    let client = quiet_builder(&server)
+        .log_config(LogConfig {
+            flush_size: 1000,
+            flush_interval: Duration::from_secs(600),
+            ..LogConfig::default()
+        })
+        .build()
+        .unwrap();
+
+    client.log(record("greeting")).unwrap();
+    assert!(client.flush().is_err());
+    let after_flush = server.request_count();
+
+    let start = Instant::now();
+    client.shutdown();
+    let elapsed = start.elapsed();
+
+    assert!(
+        elapsed < Duration::from_secs(2),
+        "shutdown took {elapsed:?} against a Retry-After of 120s"
+    );
+    assert_eq!(server.request_count(), after_flush);
 }
 
 #[test]

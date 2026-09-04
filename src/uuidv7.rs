@@ -78,16 +78,25 @@ fn format_hyphenated(bytes: &[u8; 16]) -> String {
 
 // A SplitMix64 stream seeded once from the OS (or from the clock and an address when the OS
 // source is unavailable). Ids only have to be unique, not unpredictable.
+//
+// The step has to be a single atomic read-modify-write: a `load` followed by a `store` lets two
+// threads read the same word and hand back the same id, and an id is the idempotency key of a
+// monitoring log, so a collision makes the server absorb the record as a duplicate and the log
+// disappears with no error anywhere.
 static STATE: AtomicU64 = AtomicU64::new(0);
 
+/// The SplitMix64 increment (the golden-ratio odd constant).
+const GOLDEN: u64 = 0x9e37_79b9_7f4a_7c15;
+
 fn next_u64() -> u64 {
-    let mut current = STATE.load(Ordering::Relaxed);
-    if current == 0 {
-        current = seed();
-        STATE.store(current, Ordering::Relaxed);
+    if STATE.load(Ordering::Relaxed) == 0 {
+        // Zero is the "not seeded yet" sentinel, so force the seed non-zero: the stream must
+        // never be able to land back on it. Whoever loses the race just keeps the winner's seed.
+        let _ = STATE.compare_exchange(0, seed() | 1, Ordering::Relaxed, Ordering::Relaxed);
     }
-    let next = current.wrapping_add(0x9e37_79b9_7f4a_7c15);
-    STATE.store(next, Ordering::Relaxed);
+    let next = STATE
+        .fetch_add(GOLDEN, Ordering::Relaxed)
+        .wrapping_add(GOLDEN);
     let mut z = next;
     z = (z ^ (z >> 30)).wrapping_mul(0xbf58_476d_1ce4_e5b9);
     z = (z ^ (z >> 27)).wrapping_mul(0x94d0_49bb_1331_11eb);
@@ -150,6 +159,26 @@ mod tests {
         let early = from_parts(1_000, 1, 2);
         let late = from_parts(2_000, 1, 2);
         assert!(early < late);
+    }
+
+    #[test]
+    fn ids_are_unique_across_threads() {
+        // Eight threads generating inside the same millisecond is exactly the case a non-atomic
+        // read-modify-write on the RNG state gets wrong.
+        let threads: Vec<_> = (0..8)
+            .map(|_| {
+                std::thread::spawn(|| (0..20_000).map(|_| generate()).collect::<Vec<String>>())
+            })
+            .collect();
+        let mut seen = HashSet::new();
+        let mut total = 0usize;
+        for thread in threads {
+            for id in thread.join().expect("the generator never panics") {
+                total += 1;
+                assert!(seen.insert(id.clone()), "{id} was generated twice");
+            }
+        }
+        assert_eq!(seen.len(), total);
     }
 
     #[test]
