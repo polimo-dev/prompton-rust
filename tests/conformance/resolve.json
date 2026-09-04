@@ -1,0 +1,803 @@
+{
+  "cases": [
+    {
+      "environment": "production",
+      "expect": {
+        "deployment_id": "0198f2a1-0000-7000-8000-00000000d001",
+        "effective_params": {
+          "max_tokens": 512,
+          "temperature": 0.2
+        },
+        "effective_provider_options": {
+          "allow_fallbacks": true,
+          "only": [
+            "OpenAI"
+          ],
+          "sort": null
+        },
+        "kind": "chat",
+        "messages": [
+          {
+            "content": "You are a friendly greeter. Answer in one line.",
+            "role": "system"
+          },
+          {
+            "content": "Say hello to {{ name }}.",
+            "role": "user"
+          }
+        ],
+        "model": "openai/gpt-4o-mini",
+        "model_id": "0198f2a1-0000-7000-8000-00000000e001",
+        "prompt": "default",
+        "prompt_version": {
+          "id": "0198f2a1-0000-7000-8000-00000000a001",
+          "number": 2
+        },
+        "prompts": [
+          "default",
+          "ko"
+        ],
+        "provider": "openrouter",
+        "revision": 3,
+        "warnings": []
+      },
+      "name": "chat/default_prompt_without_variables",
+      "note": "with no variables the raw message templates come back unrendered",
+      "snapshot_ref": "production",
+      "use_case": "greeting"
+    },
+    {
+      "environment": "production",
+      "expect": {
+        "deployment_id": "0198f2a1-0000-7000-8000-00000000d001",
+        "effective_params": {
+          "max_tokens": 512,
+          "temperature": 0.2
+        },
+        "effective_provider_options": {
+          "allow_fallbacks": true,
+          "only": [
+            "OpenAI"
+          ],
+          "sort": null
+        },
+        "kind": "chat",
+        "messages": [
+          {
+            "content": "You are a friendly greeter. Answer in one line.",
+            "role": "system"
+          },
+          {
+            "content": "Say hello to Ada.",
+            "role": "user"
+          }
+        ],
+        "model": "openai/gpt-4o-mini",
+        "model_id": "0198f2a1-0000-7000-8000-00000000e001",
+        "prompt": "default",
+        "prompt_version": {
+          "id": "0198f2a1-0000-7000-8000-00000000a001",
+          "number": 2
+        },
+        "prompts": [
+          "default",
+          "ko"
+        ],
+        "provider": "openrouter",
+        "revision": 3,
+        "warnings": []
+      },
+      "name": "chat/default_prompt_rendered",
+      "snapshot_ref": "production",
+      "use_case": "greeting",
+      "variables": {
+        "name": "Ada"
+      }
+    },
+    {
+      "environment": "production",
+      "expect": {
+        "deployment_id": "0198f2a1-0000-7000-8000-00000000d001",
+        "effective_params": {
+          "max_tokens": 512,
+          "temperature": 0.2
+        },
+        "effective_provider_options": {
+          "allow_fallbacks": true,
+          "only": [
+            "OpenAI"
+          ],
+          "sort": null
+        },
+        "kind": "chat",
+        "messages": [
+          {
+            "content": "너는 친절한 인사 도우미다. 한 줄로 답한다.",
+            "role": "system"
+          },
+          {
+            "content": "아다님에게 인사해줘.",
+            "role": "user"
+          }
+        ],
+        "model": "openai/gpt-4o-mini",
+        "model_id": "0198f2a1-0000-7000-8000-00000000e001",
+        "prompt": "ko",
+        "prompt_version": {
+          "id": "0198f2a1-0000-7000-8000-00000000a002",
+          "number": 1
+        },
+        "prompts": [
+          "default",
+          "ko"
+        ],
+        "provider": "openrouter",
+        "revision": 3,
+        "warnings": []
+      },
+      "name": "chat/named_prompt_rendered",
+      "note": "the prompt name is the only selection axis; this is how language branching works",
+      "prompt": "ko",
+      "snapshot_ref": "production",
+      "use_case": "greeting",
+      "variables": {
+        "name": "아다"
+      }
+    },
+    {
+      "environment": "production",
+      "expect": {
+        "deployment_id": "0198f2a1-0000-7000-8000-00000000d001",
+        "effective_params": {
+          "max_tokens": 512,
+          "temperature": 0.2
+        },
+        "effective_provider_options": {
+          "allow_fallbacks": true,
+          "only": [
+            "OpenAI"
+          ],
+          "sort": null
+        },
+        "kind": "chat",
+        "messages": [
+          {
+            "content": "You are a friendly greeter. Answer in one line.",
+            "role": "system"
+          },
+          {
+            "content": "Say hello to Ada.",
+            "role": "user"
+          }
+        ],
+        "model": "openai/gpt-4o-mini",
+        "model_id": "0198f2a1-0000-7000-8000-00000000e001",
+        "prompt": "default",
+        "prompt_version": {
+          "id": "0198f2a1-0000-7000-8000-00000000a001",
+          "number": 2
+        },
+        "prompts": [
+          "default",
+          "ko"
+        ],
+        "provider": "openrouter",
+        "revision": 3,
+        "warnings": []
+      },
+      "name": "chat/explicit_default_prompt_name",
+      "prompt": "default",
+      "snapshot_ref": "production",
+      "use_case": "greeting",
+      "variables": {
+        "name": "Ada"
+      }
+    },
+    {
+      "environment": "production",
+      "expect": {
+        "error": "missing_variable",
+        "variable": "name"
+      },
+      "name": "chat/missing_variable",
+      "note": "resolution succeeds; rendering fails",
+      "snapshot_ref": "production",
+      "use_case": "greeting",
+      "variables": {}
+    },
+    {
+      "environment": "production",
+      "expect": {
+        "available_prompts": [
+          "default",
+          "ko"
+        ],
+        "error": "unknown_prompt",
+        "prompt": "fr"
+      },
+      "name": "chat/unpinned_prompt_name",
+      "note": "never falls back to \"default\"",
+      "prompt": "fr",
+      "snapshot_ref": "production",
+      "use_case": "greeting"
+    },
+    {
+      "environment": "production",
+      "expect": {
+        "deployment_id": "0198f2a1-0000-7000-8000-00000000d002",
+        "effective_params": {
+          "temperature": 0.0
+        },
+        "effective_provider_options": {
+          "allow_fallbacks": false,
+          "only": [
+            "OpenAI"
+          ]
+        },
+        "kind": "text",
+        "model": "openai/gpt-4o-mini",
+        "model_id": "0198f2a1-0000-7000-8000-00000000e001",
+        "prompt": "default",
+        "prompt_version": {
+          "id": "0198f2a1-0000-7000-8000-00000000a003",
+          "number": 4
+        },
+        "prompts": [
+          "default"
+        ],
+        "provider": "openrouter",
+        "revision": 1,
+        "text": "Summarize the following notes in one paragraph.\n- alpha\n- beta\n- gamma\n",
+        "warnings": []
+      },
+      "name": "text/rendered_with_for_loop",
+      "snapshot_ref": "production",
+      "use_case": "summarize",
+      "variables": {
+        "items": [
+          "alpha",
+          "beta",
+          "gamma"
+        ]
+      }
+    },
+    {
+      "environment": "production",
+      "expect": {
+        "deployment_id": "0198f2a1-0000-7000-8000-00000000d002",
+        "effective_params": {
+          "temperature": 0.0
+        },
+        "effective_provider_options": {
+          "allow_fallbacks": false,
+          "only": [
+            "OpenAI"
+          ]
+        },
+        "kind": "text",
+        "model": "openai/gpt-4o-mini",
+        "model_id": "0198f2a1-0000-7000-8000-00000000e001",
+        "prompt": "default",
+        "prompt_version": {
+          "id": "0198f2a1-0000-7000-8000-00000000a003",
+          "number": 4
+        },
+        "prompts": [
+          "default"
+        ],
+        "provider": "openrouter",
+        "revision": 1,
+        "text": "Summarize the following notes in one paragraph.\n{% for item in items %}- {{ item }}\n{% endfor %}",
+        "warnings": []
+      },
+      "name": "text/raw_template_without_variables",
+      "snapshot_ref": "production",
+      "use_case": "summarize"
+    },
+    {
+      "environment": "production",
+      "expect": {
+        "deployment_id": "0198f2a1-0000-7000-8000-00000000d003",
+        "effective_params": {
+          "dimensions": 256
+        },
+        "effective_provider_options": {},
+        "kind": "embedding",
+        "model": "openai/text-embedding-3-small",
+        "model_id": "0198f2a1-0000-7000-8000-00000000e002",
+        "prompt": null,
+        "prompt_version": null,
+        "prompts": [],
+        "provider": "openrouter",
+        "revision": 2,
+        "warnings": []
+      },
+      "name": "embedding/no_prompt",
+      "note": "kind embedding resolves the model only: prompt and prompt_version are null",
+      "snapshot_ref": "production",
+      "use_case": "embed"
+    },
+    {
+      "environment": "production",
+      "expect": {
+        "deployment_id": "0198f2a1-0000-7000-8000-00000000d003",
+        "effective_params": {
+          "dimensions": 256
+        },
+        "effective_provider_options": {},
+        "kind": "embedding",
+        "model": "openai/text-embedding-3-small",
+        "model_id": "0198f2a1-0000-7000-8000-00000000e002",
+        "prompt": null,
+        "prompt_version": null,
+        "prompts": [],
+        "provider": "openrouter",
+        "revision": 2,
+        "warnings": []
+      },
+      "name": "embedding/prompt_name_is_ignored",
+      "note": "a prompt name given for an embedding use case is ignored, not an error",
+      "prompt": "ko",
+      "snapshot_ref": "production",
+      "use_case": "embed"
+    },
+    {
+      "environment": "production",
+      "expect": {
+        "error": "unresolved"
+      },
+      "name": "error/use_case_without_deployment",
+      "snapshot_ref": "production",
+      "use_case": "draft"
+    },
+    {
+      "environment": "production",
+      "expect": {
+        "error": "unknown_use_case"
+      },
+      "name": "error/unknown_use_case",
+      "snapshot_ref": "production",
+      "use_case": "nope"
+    },
+    {
+      "environment": "staging",
+      "expect": {
+        "deployment_id": "0198f2a1-0000-7000-8000-00000000d011",
+        "effective_params": {
+          "max_tokens": 512,
+          "temperature": 0.9,
+          "top_p": 0.8
+        },
+        "effective_provider_options": {
+          "allow_fallbacks": false,
+          "only": [
+            "OpenAI"
+          ]
+        },
+        "kind": "chat",
+        "messages": [
+          {
+            "content": "You are a greeter (staging build).",
+            "role": "system"
+          },
+          {
+            "content": "Greet Ada.",
+            "role": "user"
+          }
+        ],
+        "model": "openai/gpt-4o-mini",
+        "model_id": "0198f2a1-0000-7000-8000-00000000e001",
+        "prompt": "default",
+        "prompt_version": {
+          "id": "0198f2a1-0000-7000-8000-00000000a004",
+          "number": 3
+        },
+        "prompts": [
+          "default"
+        ],
+        "provider": "openrouter",
+        "revision": 7,
+        "warnings": []
+      },
+      "name": "staging/same_use_case_different_pin",
+      "note": "same key, different environment: different model, params and prompt version",
+      "snapshot_ref": "staging",
+      "use_case": "greeting",
+      "variables": {
+        "name": "Ada"
+      }
+    },
+    {
+      "environment": "staging",
+      "expect": {
+        "available_prompts": [
+          "default"
+        ],
+        "error": "unknown_prompt",
+        "prompt": "ko"
+      },
+      "name": "staging/prompt_pinned_only_in_production",
+      "prompt": "ko",
+      "snapshot_ref": "staging",
+      "use_case": "greeting"
+    },
+    {
+      "environment": "production",
+      "expect": {
+        "deployment_id": "0198f2a1-0000-7000-8000-00000000d021",
+        "effective_params": {
+          "temperature": 0.4
+        },
+        "effective_provider_options": {
+          "only": [
+            "OpenAI"
+          ]
+        },
+        "kind": "chat",
+        "model": null,
+        "model_id": null,
+        "prompt": "default",
+        "prompt_version": null,
+        "prompts": [
+          "default"
+        ],
+        "provider": null,
+        "revision": 1,
+        "warnings": [
+          "missing_prompt_version: 0198f2a1-0000-7000-8000-0000000000ff",
+          "missing_model: 0198f2a1-0000-7000-8000-0000000000fe"
+        ]
+      },
+      "name": "degraded/missing_prompt_version_and_model",
+      "note": "the snapshot references ids it does not contain: resolution still succeeds, with warnings and null fields",
+      "snapshot_ref": "degraded",
+      "use_case": "greeting"
+    }
+  ],
+  "conformance": "resolve",
+  "default_prompt": "default",
+  "description": "Resolution: snapshot + use case (+ prompt name) -> which model, params and prompt version to use, then rendering when `variables` is present. This is exactly what POST /api/v1/resolve does on the server.",
+  "error_categories": {
+    "missing_variable": "resolution succeeded but rendering needed a variable that was absent",
+    "unknown_prompt": "the deployment pins no prompt version under that name (no fallback to \"default\")",
+    "unknown_use_case": "the snapshot has no use case with that key",
+    "unresolved": "the use case exists but has no deployment in this environment"
+  },
+  "format_version": 1,
+  "generated_from": {
+    "commit": "5f04e7e4cfb66d379b2f00eef4cd3fce4ba26a61",
+    "language": "elixir",
+    "repo": "https://github.com/polimo-dev/prompton-elixir",
+    "sdk": "prompton_sdk",
+    "sdk_version": "0.1.0"
+  },
+  "merge_semantics": {
+    "effective_params": "use_case.default_params <- deployment.params (shallow, later wins)",
+    "effective_provider_options": "model.provider_options <- deployment.provider_options (shallow, later wins)",
+    "null_values": "an override value of null is kept as null, not deleted"
+  },
+  "snapshot_notes": {
+    "degraded": "Synthetic. The deployment points at a prompt version id and a model id the snapshot does not contain, to pin down the warning path. A healthy server never emits this.",
+    "production": "The everyday shape: three deployed use cases (chat with two prompt names, text, embedding) plus one use case that has never been deployed. Field for field what GET /snapshot returns.",
+    "staging": "The same project in another environment: one use case, a different revision, different params and only the default prompt pinned."
+  },
+  "snapshots": {
+    "degraded": {
+      "deployments": {
+        "greeting": {
+          "id": "0198f2a1-0000-7000-8000-00000000d021",
+          "model_id": "0198f2a1-0000-7000-8000-0000000000fe",
+          "params": {},
+          "prompt_pins": {
+            "default": "0198f2a1-0000-7000-8000-0000000000ff"
+          },
+          "provider_options": {
+            "only": [
+              "OpenAI"
+            ]
+          },
+          "revision": 1
+        }
+      },
+      "environment": "production",
+      "models": {},
+      "project": "sdkfixture",
+      "prompt_versions": {},
+      "schema_version": 3,
+      "use_cases": {
+        "greeting": {
+          "default_params": {
+            "temperature": 0.4
+          },
+          "id": "0198f2a1-0000-7000-8000-00000000c001",
+          "input_schema": [],
+          "kind": "chat",
+          "payload_policy": {
+            "encrypt": false,
+            "max_bytes": 262144,
+            "mode": "full",
+            "retention_days": 30,
+            "sample_rate": 1.0
+          }
+        }
+      }
+    },
+    "production": {
+      "deployments": {
+        "embed": {
+          "id": "0198f2a1-0000-7000-8000-00000000d003",
+          "model_id": "0198f2a1-0000-7000-8000-00000000e002",
+          "params": {
+            "dimensions": 256
+          },
+          "prompt_pins": {},
+          "provider_options": {},
+          "revision": 2
+        },
+        "greeting": {
+          "id": "0198f2a1-0000-7000-8000-00000000d001",
+          "model_id": "0198f2a1-0000-7000-8000-00000000e001",
+          "params": {
+            "temperature": 0.2
+          },
+          "prompt_pins": {
+            "default": "0198f2a1-0000-7000-8000-00000000a001",
+            "ko": "0198f2a1-0000-7000-8000-00000000a002"
+          },
+          "provider_options": {
+            "allow_fallbacks": true,
+            "sort": null
+          },
+          "revision": 3
+        },
+        "summarize": {
+          "id": "0198f2a1-0000-7000-8000-00000000d002",
+          "model_id": "0198f2a1-0000-7000-8000-00000000e001",
+          "params": {},
+          "prompt_pins": {
+            "default": "0198f2a1-0000-7000-8000-00000000a003"
+          },
+          "provider_options": {},
+          "revision": 1
+        }
+      },
+      "environment": "production",
+      "models": {
+        "0198f2a1-0000-7000-8000-00000000e001": {
+          "capabilities": [
+            "tools",
+            "streaming"
+          ],
+          "display_name": "GPT-4o mini",
+          "id": "0198f2a1-0000-7000-8000-00000000e001",
+          "metadata": {},
+          "model_id": "openai/gpt-4o-mini",
+          "provider": "openrouter",
+          "provider_options": {
+            "allow_fallbacks": false,
+            "only": [
+              "OpenAI"
+            ]
+          },
+          "status": "active"
+        },
+        "0198f2a1-0000-7000-8000-00000000e002": {
+          "capabilities": [],
+          "display_name": "text-embedding-3-small",
+          "id": "0198f2a1-0000-7000-8000-00000000e002",
+          "metadata": {},
+          "model_id": "openai/text-embedding-3-small",
+          "provider": "openrouter",
+          "provider_options": {},
+          "status": "active"
+        }
+      },
+      "project": "sdkfixture",
+      "prompt_versions": {
+        "0198f2a1-0000-7000-8000-00000000a001": {
+          "engine": "liquid",
+          "id": "0198f2a1-0000-7000-8000-00000000a001",
+          "messages": [
+            {
+              "content": "You are a friendly greeter. Answer in one line.",
+              "role": "system"
+            },
+            {
+              "content": "Say hello to {{ name }}.",
+              "role": "user"
+            }
+          ],
+          "number": 2,
+          "prompt_id": "0198f2a1-0000-7000-8000-00000000b001",
+          "text_template": null
+        },
+        "0198f2a1-0000-7000-8000-00000000a002": {
+          "engine": "liquid",
+          "id": "0198f2a1-0000-7000-8000-00000000a002",
+          "messages": [
+            {
+              "content": "너는 친절한 인사 도우미다. 한 줄로 답한다.",
+              "role": "system"
+            },
+            {
+              "content": "{{ name }}님에게 인사해줘.",
+              "role": "user"
+            }
+          ],
+          "number": 1,
+          "prompt_id": "0198f2a1-0000-7000-8000-00000000b001",
+          "text_template": null
+        },
+        "0198f2a1-0000-7000-8000-00000000a003": {
+          "engine": "liquid",
+          "id": "0198f2a1-0000-7000-8000-00000000a003",
+          "messages": [],
+          "number": 4,
+          "prompt_id": "0198f2a1-0000-7000-8000-00000000b002",
+          "text_template": "Summarize the following notes in one paragraph.\n{% for item in items %}- {{ item }}\n{% endfor %}"
+        }
+      },
+      "schema_version": 3,
+      "use_cases": {
+        "draft": {
+          "default_params": {},
+          "id": "0198f2a1-0000-7000-8000-00000000c004",
+          "input_schema": [],
+          "kind": "chat",
+          "payload_policy": {
+            "encrypt": false,
+            "max_bytes": 262144,
+            "mode": "full",
+            "retention_days": 30,
+            "sample_rate": 1.0
+          }
+        },
+        "embed": {
+          "default_params": {},
+          "id": "0198f2a1-0000-7000-8000-00000000c003",
+          "input_schema": [
+            {
+              "name": "text",
+              "required": true,
+              "type": "string"
+            }
+          ],
+          "kind": "embedding",
+          "payload_policy": {
+            "encrypt": false,
+            "max_bytes": 262144,
+            "mode": "hash",
+            "retention_days": 30,
+            "sample_rate": 1.0
+          }
+        },
+        "greeting": {
+          "default_params": {
+            "max_tokens": 512,
+            "temperature": 0.7
+          },
+          "id": "0198f2a1-0000-7000-8000-00000000c001",
+          "input_schema": [
+            {
+              "name": "name",
+              "required": true,
+              "type": "string"
+            }
+          ],
+          "kind": "chat",
+          "payload_policy": {
+            "encrypt": false,
+            "max_bytes": 262144,
+            "mode": "full",
+            "retention_days": 30,
+            "sample_rate": 1.0
+          }
+        },
+        "summarize": {
+          "default_params": {
+            "temperature": 0.0
+          },
+          "id": "0198f2a1-0000-7000-8000-00000000c002",
+          "input_schema": [
+            {
+              "name": "items",
+              "required": true,
+              "type": "list"
+            }
+          ],
+          "kind": "text",
+          "payload_policy": {
+            "encrypt": false,
+            "max_bytes": 262144,
+            "mode": "full",
+            "retention_days": 30,
+            "sample_rate": 1.0
+          }
+        }
+      }
+    },
+    "staging": {
+      "deployments": {
+        "greeting": {
+          "id": "0198f2a1-0000-7000-8000-00000000d011",
+          "model_id": "0198f2a1-0000-7000-8000-00000000e001",
+          "params": {
+            "temperature": 0.9,
+            "top_p": 0.8
+          },
+          "prompt_pins": {
+            "default": "0198f2a1-0000-7000-8000-00000000a004"
+          },
+          "provider_options": {},
+          "revision": 7
+        }
+      },
+      "environment": "staging",
+      "models": {
+        "0198f2a1-0000-7000-8000-00000000e001": {
+          "capabilities": [
+            "tools",
+            "streaming"
+          ],
+          "display_name": "GPT-4o mini",
+          "id": "0198f2a1-0000-7000-8000-00000000e001",
+          "metadata": {},
+          "model_id": "openai/gpt-4o-mini",
+          "provider": "openrouter",
+          "provider_options": {
+            "allow_fallbacks": false,
+            "only": [
+              "OpenAI"
+            ]
+          },
+          "status": "active"
+        }
+      },
+      "project": "sdkfixture",
+      "prompt_versions": {
+        "0198f2a1-0000-7000-8000-00000000a004": {
+          "engine": "liquid",
+          "id": "0198f2a1-0000-7000-8000-00000000a004",
+          "messages": [
+            {
+              "content": "You are a greeter (staging build).",
+              "role": "system"
+            },
+            {
+              "content": "Greet {{ name }}.",
+              "role": "user"
+            }
+          ],
+          "number": 3,
+          "prompt_id": "0198f2a1-0000-7000-8000-00000000b001",
+          "text_template": null
+        }
+      },
+      "schema_version": 3,
+      "use_cases": {
+        "greeting": {
+          "default_params": {
+            "max_tokens": 512,
+            "temperature": 0.7
+          },
+          "id": "0198f2a1-0000-7000-8000-00000000c001",
+          "input_schema": [
+            {
+              "name": "name",
+              "required": true,
+              "type": "string"
+            }
+          ],
+          "kind": "chat",
+          "payload_policy": {
+            "encrypt": false,
+            "max_bytes": 65536,
+            "mode": "full",
+            "retention_days": 30,
+            "sample_rate": 0.5
+          }
+        }
+      }
+    }
+  }
+}

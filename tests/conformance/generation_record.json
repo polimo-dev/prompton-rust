@@ -1,0 +1,596 @@
+{
+  "batch_envelope": {
+    "idempotency": "the record id is the primary key: resending the identical batch returns duplicates instead of accepted, and stores nothing new",
+    "request": {
+      "generations": [
+        {
+          "context": {
+            "language": "en",
+            "plan": "pro"
+          },
+          "deployment_id": "0198f2a1-0000-7000-8000-00000000d001",
+          "deployment_revision": 3,
+          "end_user_ref": "user-42",
+          "finish_reason": "stop",
+          "id": "0198f2a1-1111-7000-8000-000000000001",
+          "input": {
+            "messages": [
+              {
+                "content": "You are a friendly greeter. Answer in one line.",
+                "role": "system"
+              },
+              {
+                "content": "Say hello to Ada.",
+                "role": "user"
+              }
+            ],
+            "variables": {
+              "name": "Ada"
+            }
+          },
+          "kind": "chat",
+          "latency_ms": 842,
+          "metadata": {
+            "attempt": 1,
+            "is_byok": false,
+            "job_id": 8842
+          },
+          "model": "openai/gpt-4o-mini",
+          "model_used": "openai/gpt-4o-mini",
+          "output": {
+            "content": "Hello, Ada! Lovely to see you."
+          },
+          "params": {
+            "max_tokens": 512,
+            "temperature": 0.2
+          },
+          "prompt": "default",
+          "prompt_version_id": "0198f2a1-0000-7000-8000-00000000a001",
+          "provider": "openrouter",
+          "resolution_source": "remote",
+          "sdk": {
+            "name": "prompton_sdk",
+            "version": "0.1.0"
+          },
+          "sequence": 1,
+          "started_at": "2026-09-04T09:00:00.000000Z",
+          "status": "ok",
+          "stop_kind": "stop",
+          "trace_id": "oban:8842",
+          "upstream_provider": "OpenAI",
+          "usage": {
+            "cost_source": "provider",
+            "cost_usd": 1.12e-4,
+            "input_tokens": 38,
+            "output_tokens": 9,
+            "raw": {
+              "completion_tokens": 9,
+              "prompt_tokens": 38,
+              "total_tokens": 47
+            }
+          },
+          "use_case": "greeting"
+        },
+        {
+          "context": {},
+          "deployment_id": "0198f2a1-0000-7000-8000-00000000d001",
+          "deployment_revision": 3,
+          "error": {
+            "kind": "rate_limited",
+            "message": "rate limited by upstream provider",
+            "status": 429
+          },
+          "id": "0198f2a1-1111-7000-8000-000000000002",
+          "input": {
+            "messages": [
+              {
+                "content": "You are a friendly greeter. Answer in one line.",
+                "role": "system"
+              },
+              {
+                "content": "Say hello to Ada.",
+                "role": "user"
+              }
+            ],
+            "variables": {
+              "name": "Ada"
+            }
+          },
+          "kind": "chat",
+          "latency_ms": 1503,
+          "metadata": {},
+          "model": "openai/gpt-4o-mini",
+          "params": {
+            "max_tokens": 512,
+            "temperature": 0.2
+          },
+          "prompt": "default",
+          "prompt_version_id": "0198f2a1-0000-7000-8000-00000000a001",
+          "provider": "openrouter",
+          "resolution_source": "remote",
+          "sdk": {
+            "name": "prompton_sdk",
+            "version": "0.1.0"
+          },
+          "sequence": 2,
+          "started_at": "2026-09-04T09:00:00.000000Z",
+          "status": "error",
+          "trace_id": "oban:8843",
+          "usage": {
+            "cost_source": "unknown",
+            "cost_usd": null,
+            "input_tokens": null,
+            "output_tokens": null,
+            "raw": null
+          },
+          "use_case": "greeting"
+        },
+        {
+          "context": {},
+          "deployment_id": "0198f2a1-0000-7000-8000-00000000d001",
+          "deployment_revision": 3,
+          "error": {
+            "kind": "parse",
+            "message": "unexpected end of JSON input"
+          },
+          "finish_reason": "length",
+          "id": "0198f2a1-1111-7000-8000-000000000003",
+          "input": {
+            "messages": [
+              {
+                "content": "You are a friendly greeter. Answer in one line.",
+                "role": "system"
+              },
+              {
+                "content": "Say hello to Ada.",
+                "role": "user"
+              }
+            ],
+            "variables": {
+              "name": "Ada"
+            }
+          },
+          "kind": "chat",
+          "latency_ms": 2310,
+          "metadata": {},
+          "model": "openai/gpt-4o-mini",
+          "output": {
+            "content": "{\"greeting\": \"Hello, Ada!\""
+          },
+          "params": {
+            "max_tokens": 512,
+            "temperature": 0.2
+          },
+          "prompt": "default",
+          "prompt_version_id": "0198f2a1-0000-7000-8000-00000000a001",
+          "provider": "openrouter",
+          "resolution_source": "remote",
+          "sdk": {
+            "name": "prompton_sdk",
+            "version": "0.1.0"
+          },
+          "started_at": "2026-09-04T09:00:00.000000Z",
+          "status": "error",
+          "stop_kind": "length",
+          "trace_id": "oban:8844",
+          "usage": {
+            "cost_source": "provider",
+            "cost_usd": 2.08e-4,
+            "input_tokens": 38,
+            "output_tokens": 512,
+            "raw": null
+          },
+          "use_case": "greeting"
+        },
+        {
+          "context": {},
+          "deployment_id": "0198f2a1-0000-7000-8000-00000000d003",
+          "deployment_revision": 2,
+          "id": "0198f2a1-1111-7000-8000-000000000004",
+          "input": {
+            "variables": {
+              "text": "PromptOn is the control plane for your app's LLM prompts."
+            }
+          },
+          "kind": "embedding",
+          "latency_ms": 96,
+          "metadata": {
+            "chunk": 12
+          },
+          "model": "openai/text-embedding-3-small",
+          "params": {
+            "dimensions": 256
+          },
+          "provider": "openrouter",
+          "resolution_source": "disk",
+          "sdk": {
+            "name": "prompton_sdk",
+            "version": "0.1.0"
+          },
+          "started_at": "2026-09-04T09:00:00.000000Z",
+          "status": "ok",
+          "trace_id": "ingest:2026-09-04:batch-7",
+          "usage": {
+            "cost_source": "catalog",
+            "cost_usd": 1.2e-6,
+            "input_tokens": 14,
+            "output_tokens": 0,
+            "raw": null
+          },
+          "use_case": "embed"
+        },
+        {
+          "deployment_id": "0198f2a1-0000-7000-8000-00000000d002",
+          "deployment_revision": 1,
+          "finish_reason": "stop",
+          "id": "0198f2a1-1111-7000-8000-000000000005",
+          "input": {
+            "text": "Summarize the following notes in one paragraph.\n- alpha\n- beta\n"
+          },
+          "kind": "text",
+          "latency_ms": 1180,
+          "model": "openai/gpt-4o-mini",
+          "model_id": "0198f2a1-0000-7000-8000-00000000e001",
+          "output": {
+            "content": "Alpha and beta, summarised."
+          },
+          "prompt": "default",
+          "prompt_version_id": "0198f2a1-0000-7000-8000-00000000a003",
+          "provider": "openrouter",
+          "resolution_source": "bundle",
+          "sdk": {
+            "name": "prompton_sdk",
+            "version": "0.1.0"
+          },
+          "started_at": "2026-09-04T09:00:00.000000Z",
+          "status": "ok",
+          "stop_kind": "stop",
+          "usage": {
+            "cost_source": "unknown",
+            "input_tokens": 22,
+            "output_tokens": 7
+          },
+          "use_case": "summarize"
+        }
+      ]
+    },
+    "response_example": {
+      "accepted": 5,
+      "duplicates": 0,
+      "rejected": []
+    },
+    "response_fields": {
+      "accepted": "records stored by this request",
+      "duplicates": "ids this project had already stored - a resend of the same batch returns them here",
+      "rejected": "per-record failures as {index, id, code, message}; the rest of the batch is still accepted"
+    },
+    "response_on_resend": {
+      "accepted": 0,
+      "duplicates": 5,
+      "rejected": []
+    }
+  },
+  "conformance": "generation_record",
+  "description": "Complete monitoring-log records in the shape POST /api/v1/generations accepts, plus the batch envelope and the server's validation rules.",
+  "endpoint": {
+    "headers": {
+      "authorization": "Bearer ptn_<project_slug>_<random>",
+      "content-type": "application/json"
+    },
+    "max_records_per_request": 200,
+    "method": "POST",
+    "path": "/api/v1/generations",
+    "query": {
+      "environment": "production (default; a request parameter, not a key property)"
+    },
+    "scope": "logs",
+    "success_status": 202
+  },
+  "field_rules": {
+    "error.kind": "http_4xx | http_5xx | rate_limited | timeout | transport | parse | app",
+    "id": "MUST be a UUIDv7 (version nibble 7). Request validation accepts any UUID string, but the database column is a UUIDv7 type and a v4 id fails on write: the record comes back in `rejected` with \"record could not be stored\". Generate v7 (48-bit unix milliseconds, then random) so records also sort by time.",
+    "jsonb_safety": "every string (including keys inside context/metadata/params) must be valid UTF-8 with no NUL byte, and every integer must fit in 64 bits, or the record is rejected",
+    "kind": "chat | text | embedding (defaults to chat)",
+    "model": "the provider model string that was actually requested",
+    "null_keys": "the SDK omits a TOP-LEVEL key whose value is null; nested nulls inside usage are sent as null and accepted",
+    "provider": "openrouter | groq | openai | anthropic | google | other (unknown becomes other)",
+    "required": [
+      "id",
+      "use_case",
+      "model",
+      "status",
+      "started_at"
+    ],
+    "resolution_source": "remote | disk | bundle | manual",
+    "soft_references": "deployment_id, prompt_version_id and model_id must be a UUID or absent; they are not foreign keys, so a record survives the deletion of what it points at",
+    "started_at": "ISO8601 with an offset. Rejected when more than 5 minutes in the future or more than 7 days in the past - regenerate this field before replaying these fixtures against a live server",
+    "status": "ok | error",
+    "stop_kind": "stop | length | tool_call | content_filter | other; derived from finish_reason when absent",
+    "usage.cost_source": "provider | catalog | unknown",
+    "use_case": "the use case key, at most 512 bytes"
+  },
+  "format_version": 1,
+  "generated_from": {
+    "commit": "5f04e7e4cfb66d379b2f00eef4cd3fce4ba26a61",
+    "language": "elixir",
+    "repo": "https://github.com/polimo-dev/prompton-elixir",
+    "sdk": "prompton_sdk",
+    "sdk_version": "0.1.0"
+  },
+  "records": [
+    {
+      "built_by": "PromptOnSDK.with_generation/3",
+      "description": "A complete successful chat generation with usage, cost and output.",
+      "name": "chat/success",
+      "record": {
+        "context": {
+          "language": "en",
+          "plan": "pro"
+        },
+        "deployment_id": "0198f2a1-0000-7000-8000-00000000d001",
+        "deployment_revision": 3,
+        "end_user_ref": "user-42",
+        "finish_reason": "stop",
+        "id": "0198f2a1-1111-7000-8000-000000000001",
+        "input": {
+          "messages": [
+            {
+              "content": "You are a friendly greeter. Answer in one line.",
+              "role": "system"
+            },
+            {
+              "content": "Say hello to Ada.",
+              "role": "user"
+            }
+          ],
+          "variables": {
+            "name": "Ada"
+          }
+        },
+        "kind": "chat",
+        "latency_ms": 842,
+        "metadata": {
+          "attempt": 1,
+          "is_byok": false,
+          "job_id": 8842
+        },
+        "model": "openai/gpt-4o-mini",
+        "model_used": "openai/gpt-4o-mini",
+        "output": {
+          "content": "Hello, Ada! Lovely to see you."
+        },
+        "params": {
+          "max_tokens": 512,
+          "temperature": 0.2
+        },
+        "prompt": "default",
+        "prompt_version_id": "0198f2a1-0000-7000-8000-00000000a001",
+        "provider": "openrouter",
+        "resolution_source": "remote",
+        "sdk": {
+          "name": "prompton_sdk",
+          "version": "0.1.0"
+        },
+        "sequence": 1,
+        "started_at": "2026-09-04T09:00:00.000000Z",
+        "status": "ok",
+        "stop_kind": "stop",
+        "trace_id": "oban:8842",
+        "upstream_provider": "OpenAI",
+        "usage": {
+          "cost_source": "provider",
+          "cost_usd": 1.12e-4,
+          "input_tokens": 38,
+          "output_tokens": 9,
+          "raw": {
+            "completion_tokens": 9,
+            "prompt_tokens": 38,
+            "total_tokens": 47
+          }
+        },
+        "use_case": "greeting"
+      }
+    },
+    {
+      "built_by": "PromptOnSDK.with_generation/3",
+      "description": "The provider call failed. status is error, there is no output or usage, and error.kind is one of the seven canonical kinds.",
+      "name": "chat/error_without_output",
+      "record": {
+        "context": {},
+        "deployment_id": "0198f2a1-0000-7000-8000-00000000d001",
+        "deployment_revision": 3,
+        "error": {
+          "kind": "rate_limited",
+          "message": "rate limited by upstream provider",
+          "status": 429
+        },
+        "id": "0198f2a1-1111-7000-8000-000000000002",
+        "input": {
+          "messages": [
+            {
+              "content": "You are a friendly greeter. Answer in one line.",
+              "role": "system"
+            },
+            {
+              "content": "Say hello to Ada.",
+              "role": "user"
+            }
+          ],
+          "variables": {
+            "name": "Ada"
+          }
+        },
+        "kind": "chat",
+        "latency_ms": 1503,
+        "metadata": {},
+        "model": "openai/gpt-4o-mini",
+        "params": {
+          "max_tokens": 512,
+          "temperature": 0.2
+        },
+        "prompt": "default",
+        "prompt_version_id": "0198f2a1-0000-7000-8000-00000000a001",
+        "provider": "openrouter",
+        "resolution_source": "remote",
+        "sdk": {
+          "name": "prompton_sdk",
+          "version": "0.1.0"
+        },
+        "sequence": 2,
+        "started_at": "2026-09-04T09:00:00.000000Z",
+        "status": "error",
+        "trace_id": "oban:8843",
+        "usage": {
+          "cost_source": "unknown",
+          "cost_usd": null,
+          "input_tokens": null,
+          "output_tokens": null,
+          "raw": null
+        },
+        "use_case": "greeting"
+      }
+    },
+    {
+      "built_by": "PromptOnSDK.with_generation/3",
+      "description": "The provider answered but the app could not parse the answer. status is error and the usage and output are still recorded, so the call still counts as spend and as a quality signal.",
+      "name": "chat/error_with_usage_preserved",
+      "record": {
+        "context": {},
+        "deployment_id": "0198f2a1-0000-7000-8000-00000000d001",
+        "deployment_revision": 3,
+        "error": {
+          "kind": "parse",
+          "message": "unexpected end of JSON input"
+        },
+        "finish_reason": "length",
+        "id": "0198f2a1-1111-7000-8000-000000000003",
+        "input": {
+          "messages": [
+            {
+              "content": "You are a friendly greeter. Answer in one line.",
+              "role": "system"
+            },
+            {
+              "content": "Say hello to Ada.",
+              "role": "user"
+            }
+          ],
+          "variables": {
+            "name": "Ada"
+          }
+        },
+        "kind": "chat",
+        "latency_ms": 2310,
+        "metadata": {},
+        "model": "openai/gpt-4o-mini",
+        "output": {
+          "content": "{\"greeting\": \"Hello, Ada!\""
+        },
+        "params": {
+          "max_tokens": 512,
+          "temperature": 0.2
+        },
+        "prompt": "default",
+        "prompt_version_id": "0198f2a1-0000-7000-8000-00000000a001",
+        "provider": "openrouter",
+        "resolution_source": "remote",
+        "sdk": {
+          "name": "prompton_sdk",
+          "version": "0.1.0"
+        },
+        "started_at": "2026-09-04T09:00:00.000000Z",
+        "status": "error",
+        "stop_kind": "length",
+        "trace_id": "oban:8844",
+        "usage": {
+          "cost_source": "provider",
+          "cost_usd": 2.08e-4,
+          "input_tokens": 38,
+          "output_tokens": 512,
+          "raw": null
+        },
+        "use_case": "greeting"
+      }
+    },
+    {
+      "built_by": "PromptOnSDK.with_generation/3",
+      "description": "An embedding generation: kind is embedding, there is no prompt or prompt_version_id, the input is text and only input_tokens are reported. resolution_source records that the snapshot came from the disk cache.",
+      "name": "embedding/success",
+      "record": {
+        "context": {},
+        "deployment_id": "0198f2a1-0000-7000-8000-00000000d003",
+        "deployment_revision": 2,
+        "id": "0198f2a1-1111-7000-8000-000000000004",
+        "input": {
+          "variables": {
+            "text": "PromptOn is the control plane for your app's LLM prompts."
+          }
+        },
+        "kind": "embedding",
+        "latency_ms": 96,
+        "metadata": {
+          "chunk": 12
+        },
+        "model": "openai/text-embedding-3-small",
+        "params": {
+          "dimensions": 256
+        },
+        "provider": "openrouter",
+        "resolution_source": "disk",
+        "sdk": {
+          "name": "prompton_sdk",
+          "version": "0.1.0"
+        },
+        "started_at": "2026-09-04T09:00:00.000000Z",
+        "status": "ok",
+        "trace_id": "ingest:2026-09-04:batch-7",
+        "usage": {
+          "cost_source": "catalog",
+          "cost_usd": 1.2e-6,
+          "input_tokens": 14,
+          "output_tokens": 0,
+          "raw": null
+        },
+        "use_case": "embed"
+      }
+    },
+    {
+      "built_by": "hand-assembled map passed to PromptOnSDK.log/1",
+      "description": "A record an app assembles itself, for a streaming call or a background job that does not wrap the provider call. input.text carries a single prompt string instead of a message list, and the record is minimal: only the five required fields plus what the app knows.",
+      "name": "text/manual_log_with_input_text",
+      "record": {
+        "deployment_id": "0198f2a1-0000-7000-8000-00000000d002",
+        "deployment_revision": 1,
+        "finish_reason": "stop",
+        "id": "0198f2a1-1111-7000-8000-000000000005",
+        "input": {
+          "text": "Summarize the following notes in one paragraph.\n- alpha\n- beta\n"
+        },
+        "kind": "text",
+        "latency_ms": 1180,
+        "model": "openai/gpt-4o-mini",
+        "model_id": "0198f2a1-0000-7000-8000-00000000e001",
+        "output": {
+          "content": "Alpha and beta, summarised."
+        },
+        "prompt": "default",
+        "prompt_version_id": "0198f2a1-0000-7000-8000-00000000a003",
+        "provider": "openrouter",
+        "resolution_source": "bundle",
+        "sdk": {
+          "name": "prompton_sdk",
+          "version": "0.1.0"
+        },
+        "started_at": "2026-09-04T09:00:00.000000Z",
+        "status": "ok",
+        "stop_kind": "stop",
+        "usage": {
+          "cost_source": "unknown",
+          "input_tokens": 22,
+          "output_tokens": 7
+        },
+        "use_case": "summarize"
+      }
+    }
+  ]
+}

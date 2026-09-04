@@ -1,0 +1,158 @@
+{
+  "cases": [
+    {
+      "finish_reason": null,
+      "source": "absent finish_reason",
+      "stop_kind": "other",
+      "truncated": false
+    },
+    {
+      "finish_reason": "stop",
+      "source": "OpenAI, OpenRouter",
+      "stop_kind": "stop",
+      "truncated": false
+    },
+    {
+      "finish_reason": "end_turn",
+      "source": "Anthropic",
+      "stop_kind": "stop",
+      "truncated": false
+    },
+    {
+      "finish_reason": "stop_sequence",
+      "source": "Anthropic",
+      "stop_kind": "stop",
+      "truncated": false
+    },
+    {
+      "finish_reason": "length",
+      "source": "OpenAI, OpenRouter",
+      "stop_kind": "length",
+      "truncated": true
+    },
+    {
+      "finish_reason": "max_tokens",
+      "source": "Anthropic",
+      "stop_kind": "length",
+      "truncated": true
+    },
+    {
+      "finish_reason": "tool_calls",
+      "source": "OpenAI, OpenRouter",
+      "stop_kind": "tool_call",
+      "truncated": false
+    },
+    {
+      "finish_reason": "tool_use",
+      "source": "Anthropic",
+      "stop_kind": "tool_call",
+      "truncated": false
+    },
+    {
+      "finish_reason": "content_filter",
+      "source": "OpenAI, OpenRouter",
+      "stop_kind": "content_filter",
+      "truncated": false
+    },
+    {
+      "finish_reason": "function_call",
+      "source": "OpenAI (deprecated spelling)",
+      "stop_kind": "other",
+      "truncated": false
+    },
+    {
+      "finish_reason": "STOP",
+      "source": "Google Gemini (upper case)",
+      "stop_kind": "stop",
+      "truncated": false
+    },
+    {
+      "finish_reason": "MAX_TOKENS",
+      "source": "Google Gemini (upper case)",
+      "stop_kind": "length",
+      "truncated": true
+    },
+    {
+      "finish_reason": "SAFETY",
+      "source": "Google Gemini",
+      "stop_kind": "other",
+      "truncated": false
+    },
+    {
+      "finish_reason": "RECITATION",
+      "source": "Google Gemini",
+      "stop_kind": "other",
+      "truncated": false
+    },
+    {
+      "finish_reason": "OTHER",
+      "source": "Google Gemini",
+      "stop_kind": "other",
+      "truncated": false
+    },
+    {
+      "finish_reason": "error",
+      "source": "OpenRouter upstream failure",
+      "stop_kind": "other",
+      "truncated": false
+    },
+    {
+      "finish_reason": "  stop  ",
+      "source": "surrounding whitespace",
+      "stop_kind": "stop",
+      "truncated": false
+    },
+    {
+      "finish_reason": "End_Turn",
+      "source": "mixed case",
+      "stop_kind": "stop",
+      "truncated": false
+    },
+    {
+      "finish_reason": "tool_call",
+      "source": "already normalized (idempotency)",
+      "stop_kind": "tool_call",
+      "truncated": false
+    },
+    {
+      "finish_reason": "other",
+      "source": "already normalized (idempotency)",
+      "stop_kind": "other",
+      "truncated": false
+    },
+    {
+      "finish_reason": "",
+      "source": "empty string",
+      "stop_kind": "other",
+      "truncated": false
+    },
+    {
+      "finish_reason": "totally_unknown",
+      "source": "unknown value",
+      "stop_kind": "other",
+      "truncated": false
+    }
+  ],
+  "conformance": "stop_kind",
+  "description": "Normalization of a provider's raw finish_reason into PromptOn's stop_kind. Comparison is case-insensitive and trims surrounding whitespace; normalization is idempotent.",
+  "format_version": 1,
+  "generated_from": {
+    "commit": "5f04e7e4cfb66d379b2f00eef4cd3fce4ba26a61",
+    "language": "elixir",
+    "repo": "https://github.com/polimo-dev/prompton-elixir",
+    "sdk": "prompton_sdk",
+    "sdk_version": "0.1.0"
+  },
+  "stop_kinds": [
+    "stop",
+    "length",
+    "tool_call",
+    "content_filter",
+    "other"
+  ],
+  "truncated_definition": "truncated? is true only for stop_kind == \"length\"",
+  "warnings": [
+    "Google's SAFETY and RECITATION map to \"other\", not \"content_filter\": only the literal string content_filter maps there.",
+    "tool_calls is NOT a truncation - it must not count towards a truncation rate."
+  ]
+}

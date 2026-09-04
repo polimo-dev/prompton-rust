@@ -1,0 +1,845 @@
+{
+  "cases": [
+    {
+      "expect": {
+        "generation": {
+          "id": "0198f2a1-0000-7000-8000-000000001001",
+          "input": {
+            "messages": [
+              {
+                "content": "hi",
+                "role": "user"
+              }
+            ],
+            "variables": {
+              "name": "Ada"
+            }
+          },
+          "output": {
+            "content": "Hello, Ada!"
+          },
+          "status": "ok",
+          "use_case": "greeting"
+        }
+      },
+      "generation": {
+        "id": "0198f2a1-0000-7000-8000-000000001001",
+        "input": {
+          "messages": [
+            {
+              "content": "hi",
+              "role": "user"
+            }
+          ],
+          "variables": {
+            "name": "Ada"
+          }
+        },
+        "output": {
+          "content": "Hello, Ada!"
+        },
+        "status": "ok",
+        "use_case": "greeting"
+      },
+      "name": "passthrough/small_payload_is_untouched",
+      "policy": {
+        "max_bytes": 512,
+        "mode": "full",
+        "sample_rate": 1.0
+      }
+    },
+    {
+      "expect": {
+        "generation": {
+          "id": "0198f2a1-0000-7000-8000-000000001002",
+          "input": {
+            "text": "raw prompt text"
+          },
+          "output": {
+            "content": "raw completion text"
+          },
+          "status": "ok"
+        }
+      },
+      "generation": {
+        "id": "0198f2a1-0000-7000-8000-000000001002",
+        "input": "raw prompt text",
+        "output": "raw completion text",
+        "status": "ok"
+      },
+      "name": "wrapping/string_input_and_output_become_objects",
+      "note": "a string input becomes {\"text\": …} and a string output {\"content\": …}",
+      "policy": {
+        "max_bytes": 512,
+        "mode": "full",
+        "sample_rate": 1.0
+      }
+    },
+    {
+      "expect": {
+        "generation": {
+          "id": "0198f2a1-0000-7000-8000-000000001003",
+          "input": {
+            "messages": [
+              {
+                "content": "abcdefghijabcdefghija\n…[truncated 336 bytes]…\nghijabcdefghij",
+                "role": "user",
+                "truncated": true
+              }
+            ],
+            "truncated": true
+          },
+          "status": "ok"
+        }
+      },
+      "generation": {
+        "id": "0198f2a1-0000-7000-8000-000000001003",
+        "input": {
+          "messages": [
+            {
+              "content": "abcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghij",
+              "role": "user"
+            }
+          ]
+        },
+        "status": "ok"
+      },
+      "name": "truncate/single_message_content_over_max_bytes_div_8",
+      "note": "per-message cap is max(max_bytes / 8, 64) = 64 bytes here",
+      "policy": {
+        "max_bytes": 512,
+        "mode": "full",
+        "sample_rate": 1.0
+      }
+    },
+    {
+      "expect": {
+        "generation": {
+          "id": "0198f2a1-0000-7000-8000-000000001004",
+          "input": {
+            "text": "abcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghi\n…[truncated 272 bytes]…\nabcdefghijabcdefghijabcdefghijabcdefghij",
+            "truncated": true
+          },
+          "status": "ok"
+        }
+      },
+      "generation": {
+        "id": "0198f2a1-0000-7000-8000-000000001004",
+        "input": {
+          "text": "abcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghij"
+        },
+        "status": "ok"
+      },
+      "name": "truncate/input_text_over_max_bytes",
+      "note": "input.text is capped at max_bytes itself",
+      "policy": {
+        "max_bytes": 128,
+        "mode": "full",
+        "sample_rate": 1.0
+      }
+    },
+    {
+      "expect": {
+        "generation": {
+          "id": "0198f2a1-0000-7000-8000-000000001005",
+          "input": {
+            "truncated": true,
+            "variables": {
+              "bytes": 411,
+              "sha256": "75d028bdf75fd7ccb0e90dccba2e05e4d6dcb69dba2249551e1ce8dc62d80679",
+              "truncated": true
+            }
+          },
+          "status": "ok"
+        }
+      },
+      "generation": {
+        "id": "0198f2a1-0000-7000-8000-000000001005",
+        "input": {
+          "variables": {
+            "blob": "abcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghij"
+          }
+        },
+        "status": "ok"
+      },
+      "name": "truncate/variables_over_max_bytes_div_4_are_replaced_by_a_digest",
+      "note": "variables are never partially cut: the whole map is replaced by {truncated, sha256, bytes}",
+      "policy": {
+        "max_bytes": 256,
+        "mode": "full",
+        "sample_rate": 1.0
+      }
+    },
+    {
+      "expect": {
+        "generation": {
+          "id": "0198f2a1-0000-7000-8000-000000001006",
+          "output": {
+            "content": "abcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghi\n…[truncated 272 bytes]…\nabcdefghijabcdefghijabcdefghijabcdefghij",
+            "truncated": true
+          },
+          "status": "ok"
+        }
+      },
+      "generation": {
+        "id": "0198f2a1-0000-7000-8000-000000001006",
+        "output": {
+          "content": "abcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghij"
+        },
+        "status": "ok"
+      },
+      "name": "truncate/output_content_over_max_bytes_div_4",
+      "policy": {
+        "max_bytes": 512,
+        "mode": "full",
+        "sample_rate": 1.0
+      }
+    },
+    {
+      "expect": {
+        "generation": {
+          "id": "0198f2a1-0000-7000-8000-000000001007",
+          "output": {
+            "content": null,
+            "tool_calls": [
+              {
+                "function": {
+                  "arguments": "abcdefghijabcdefghijabcdefghijabcde\n…[truncated 312 bytes]…\nghijabcdefghijabcdefghij",
+                  "name": "search"
+                },
+                "id": "call_1",
+                "type": "function"
+              }
+            ],
+            "truncated": true
+          },
+          "status": "ok"
+        }
+      },
+      "generation": {
+        "id": "0198f2a1-0000-7000-8000-000000001007",
+        "output": {
+          "content": null,
+          "tool_calls": [
+            {
+              "function": {
+                "arguments": "abcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghij",
+                "name": "search"
+              },
+              "id": "call_1",
+              "type": "function"
+            }
+          ]
+        },
+        "status": "ok"
+      },
+      "name": "truncate/output_tool_calls_arguments_are_shrunk",
+      "note": "the arguments string is shrunk to fit the cap; the call envelope (id, type, name) is preserved",
+      "policy": {
+        "max_bytes": 1024,
+        "mode": "full",
+        "sample_rate": 1.0
+      }
+    },
+    {
+      "expect": {
+        "generation": {
+          "id": "0198f2a1-0000-7000-8000-000000001013",
+          "output": {
+            "content": null,
+            "tool_calls": [
+              {
+                "bytes": 479,
+                "truncated": true
+              }
+            ],
+            "truncated": true
+          },
+          "status": "ok"
+        }
+      },
+      "generation": {
+        "id": "0198f2a1-0000-7000-8000-000000001013",
+        "output": {
+          "content": null,
+          "tool_calls": [
+            {
+              "function": {
+                "arguments": "abcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghij",
+                "name": "search"
+              },
+              "id": "call_1",
+              "type": "function"
+            }
+          ]
+        },
+        "status": "ok"
+      },
+      "name": "truncate/output_tool_calls_fall_back_to_a_marker",
+      "note": "when the argument budget would fall below 32 bytes the whole tool_calls list is replaced by one marker entry",
+      "policy": {
+        "max_bytes": 512,
+        "mode": "full",
+        "sample_rate": 1.0
+      }
+    },
+    {
+      "expect": {
+        "generation": {
+          "id": "0198f2a1-0000-7000-8000-000000001008",
+          "input": {
+            "messages": [
+              {
+                "content": "system prompt",
+                "role": "system"
+              },
+              {
+                "content": "…[truncated 60 bytes]…",
+                "role": "user",
+                "truncated": true
+              },
+              {
+                "content": "…[truncated 60 bytes]…",
+                "role": "assistant",
+                "truncated": true
+              },
+              {
+                "content": "vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv",
+                "role": "user"
+              },
+              {
+                "content": "the latest turn",
+                "role": "user"
+              }
+            ],
+            "truncated": true
+          },
+          "status": "ok"
+        }
+      },
+      "generation": {
+        "id": "0198f2a1-0000-7000-8000-000000001008",
+        "input": {
+          "messages": [
+            {
+              "content": "system prompt",
+              "role": "system"
+            },
+            {
+              "content": "uuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuu",
+              "role": "user"
+            },
+            {
+              "content": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "role": "assistant"
+            },
+            {
+              "content": "vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv",
+              "role": "user"
+            },
+            {
+              "content": "the latest turn",
+              "role": "user"
+            }
+          ]
+        },
+        "status": "ok"
+      },
+      "name": "truncate/messages_total_over_max_bytes_stubs_the_middle",
+      "note": "the first and last messages are always preserved; middle messages are emptied into byte-count stubs from the front until the list fits, so a later middle message can survive intact",
+      "policy": {
+        "max_bytes": 340,
+        "mode": "full",
+        "sample_rate": 1.0
+      }
+    },
+    {
+      "expect": {
+        "generation": {
+          "id": "0198f2a1-0000-7000-8000-000000001009",
+          "input": {
+            "messages": [
+              {
+                "content": "sys",
+                "role": "system"
+              },
+              {
+                "content": "…[11 messages truncated]…",
+                "role": "system",
+                "truncated": true
+              },
+              {
+                "content": "turn 12 xxxxxxxxxxxxxxxxxxxx",
+                "role": "user"
+              }
+            ],
+            "truncated": true
+          },
+          "status": "ok"
+        }
+      },
+      "generation": {
+        "id": "0198f2a1-0000-7000-8000-000000001009",
+        "input": {
+          "messages": [
+            {
+              "content": "sys",
+              "role": "system"
+            },
+            {
+              "content": "turn 1 xxxxxxxxxxxxxxxxxxxx",
+              "role": "user"
+            },
+            {
+              "content": "turn 2 xxxxxxxxxxxxxxxxxxxx",
+              "role": "user"
+            },
+            {
+              "content": "turn 3 xxxxxxxxxxxxxxxxxxxx",
+              "role": "user"
+            },
+            {
+              "content": "turn 4 xxxxxxxxxxxxxxxxxxxx",
+              "role": "user"
+            },
+            {
+              "content": "turn 5 xxxxxxxxxxxxxxxxxxxx",
+              "role": "user"
+            },
+            {
+              "content": "turn 6 xxxxxxxxxxxxxxxxxxxx",
+              "role": "user"
+            },
+            {
+              "content": "turn 7 xxxxxxxxxxxxxxxxxxxx",
+              "role": "user"
+            },
+            {
+              "content": "turn 8 xxxxxxxxxxxxxxxxxxxx",
+              "role": "user"
+            },
+            {
+              "content": "turn 9 xxxxxxxxxxxxxxxxxxxx",
+              "role": "user"
+            },
+            {
+              "content": "turn 10 xxxxxxxxxxxxxxxxxxxx",
+              "role": "user"
+            },
+            {
+              "content": "turn 11 xxxxxxxxxxxxxxxxxxxx",
+              "role": "user"
+            },
+            {
+              "content": "turn 12 xxxxxxxxxxxxxxxxxxxx",
+              "role": "user"
+            }
+          ]
+        },
+        "status": "ok"
+      },
+      "name": "truncate/many_messages_drop_the_middle_entirely",
+      "note": "when stubbing is not enough, the middle messages are dropped and replaced by one marker message",
+      "policy": {
+        "max_bytes": 192,
+        "mode": "full",
+        "sample_rate": 1.0
+      }
+    },
+    {
+      "expect": {
+        "generation": {
+          "id": "0198f2a1-0000-7000-8000-00000000100a",
+          "input": {
+            "messages": [
+              {
+                "content": "한글한글한글한\n…[truncated 296 bytes]…\n한글한글",
+                "role": "user",
+                "truncated": true
+              }
+            ],
+            "truncated": true
+          },
+          "output": {
+            "content": "한글한글한글한글한글한글한글한글한글한\n…[truncated 232 bytes]…\n글한글한글한글한글한글한글",
+            "truncated": true
+          },
+          "status": "ok"
+        }
+      },
+      "generation": {
+        "id": "0198f2a1-0000-7000-8000-00000000100a",
+        "input": {
+          "messages": [
+            {
+              "content": "한글한글한글한글한글한글한글한글한글한글한글한글한글한글한글한글한글한글한글한글한글한글한글한글한글한글한글한글한글한글한글한글한글한글한글한글한글한글한글한글한글한글한글한글한글한글한글한글한글한글한글한글한글한글한글한글한글한글한글한글",
+              "role": "user"
+            }
+          ]
+        },
+        "output": {
+          "content": "한글한글한글한글한글한글한글한글한글한글한글한글한글한글한글한글한글한글한글한글한글한글한글한글한글한글한글한글한글한글한글한글한글한글한글한글한글한글한글한글한글한글한글한글한글한글한글한글한글한글한글한글한글한글한글한글한글한글한글한글"
+        },
+        "status": "ok"
+      },
+      "name": "truncate/utf8_boundary_is_never_split",
+      "note": "each Korean syllable is 3 bytes; the result must stay valid UTF-8 and within the cap",
+      "policy": {
+        "max_bytes": 512,
+        "mode": "full",
+        "sample_rate": 1.0
+      }
+    },
+    {
+      "expect": {
+        "generation": {
+          "error": {
+            "kind": "http_5xx",
+            "message": "EEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEE\n…[truncated 1952 bytes]…\nEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEE",
+            "status": 502
+          },
+          "id": "0198f2a1-0000-7000-8000-00000000100b",
+          "status": "error"
+        }
+      },
+      "generation": {
+        "error": {
+          "kind": "http_5xx",
+          "message": "EEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEE",
+          "status": 502
+        },
+        "id": "0198f2a1-0000-7000-8000-00000000100b",
+        "status": "error"
+      },
+      "name": "truncate/error_message_over_2048_bytes",
+      "note": "error.message has a fixed 2048-byte cap, independent of max_bytes",
+      "policy": {
+        "max_bytes": 262144,
+        "mode": "full",
+        "sample_rate": 1.0
+      }
+    },
+    {
+      "expect": {
+        "generation": {
+          "id": "0198f2a1-0000-7000-8000-00000000100c",
+          "input": {
+            "bytes": 45,
+            "hashed": true,
+            "sha256": "19e21ad5462e808b27165af1d6f50bd3a1eff3a04bb4a4cd080a9871cbfa0929"
+          },
+          "output": {
+            "bytes": 19,
+            "hashed": true,
+            "sha256": "20b2dda940d741d9780897200aaef2ef356ab32b38c7de0d94306fb5a66b4a8e"
+          },
+          "status": "ok"
+        }
+      },
+      "generation": {
+        "id": "0198f2a1-0000-7000-8000-00000000100c",
+        "input": {
+          "messages": [
+            {
+              "content": "hi",
+              "role": "user"
+            }
+          ]
+        },
+        "output": {
+          "content": "hello"
+        },
+        "status": "ok"
+      },
+      "name": "mode/hash_replaces_input_and_output_with_digests",
+      "note": "sha256 and bytes are computed over the canonical JSON of the wrapped value, with no whitespace",
+      "policy": {
+        "max_bytes": 262144,
+        "mode": "hash",
+        "sample_rate": 1.0
+      }
+    },
+    {
+      "expect": {
+        "generation": {
+          "id": "0198f2a1-0000-7000-8000-00000000100d",
+          "input": {
+            "bytes": 26,
+            "hashed": true,
+            "sha256": "9c7c98106d8e97a65e5e67e23948b323450c1f135f50d068ca60421c18f1b39b"
+          },
+          "output": {
+            "bytes": 33,
+            "hashed": true,
+            "sha256": "cb9291a5f8b068a381ad483cb06ac928246c93f3096547ce9e2d44cba0c6233b"
+          },
+          "status": "ok"
+        }
+      },
+      "generation": {
+        "id": "0198f2a1-0000-7000-8000-00000000100d",
+        "input": "raw prompt text",
+        "output": "raw completion text",
+        "status": "ok"
+      },
+      "name": "mode/hash_of_a_string_payload_hashes_the_wrapped_object",
+      "note": "wrapping happens before hashing, so the digest covers {\"text\":\"…\"}",
+      "policy": {
+        "max_bytes": 262144,
+        "mode": "hash",
+        "sample_rate": 1.0
+      }
+    },
+    {
+      "expect": {
+        "generation": {
+          "id": "0198f2a1-0000-7000-8000-00000000100e",
+          "status": "ok"
+        }
+      },
+      "generation": {
+        "id": "0198f2a1-0000-7000-8000-00000000100e",
+        "input": {
+          "messages": [
+            {
+              "content": "hi",
+              "role": "user"
+            }
+          ]
+        },
+        "output": {
+          "content": "hello"
+        },
+        "status": "ok"
+      },
+      "name": "mode/none_drops_input_and_output",
+      "policy": {
+        "max_bytes": 262144,
+        "mode": "none",
+        "sample_rate": 1.0
+      }
+    },
+    {
+      "expect": {
+        "generation": {
+          "id": "0198f2a1-0000-7000-8000-00000000100f",
+          "status": "ok",
+          "stop_kind": "stop"
+        }
+      },
+      "generation": {
+        "id": "0198f2a1-0000-7000-8000-00000000100f",
+        "input": {
+          "text": "hi"
+        },
+        "output": {
+          "content": "hello"
+        },
+        "status": "ok",
+        "stop_kind": "stop"
+      },
+      "name": "sampling/rate_zero_drops_a_successful_record",
+      "policy": {
+        "max_bytes": 262144,
+        "mode": "full",
+        "sample_rate": 0.0
+      }
+    },
+    {
+      "expect": {
+        "generation": {
+          "error": {
+            "kind": "timeout",
+            "message": "timed out"
+          },
+          "id": "0198f2a1-0000-7000-8000-000000001010",
+          "input": {
+            "text": "hi"
+          },
+          "status": "error"
+        }
+      },
+      "generation": {
+        "error": {
+          "kind": "timeout",
+          "message": "timed out"
+        },
+        "id": "0198f2a1-0000-7000-8000-000000001010",
+        "input": {
+          "text": "hi"
+        },
+        "status": "error"
+      },
+      "name": "sampling/errors_are_always_kept",
+      "policy": {
+        "max_bytes": 262144,
+        "mode": "full",
+        "sample_rate": 0.0
+      }
+    },
+    {
+      "expect": {
+        "generation": {
+          "id": "0198f2a1-0000-7000-8000-000000001011",
+          "input": {
+            "text": "hi"
+          },
+          "output": {
+            "content": "hel"
+          },
+          "status": "ok",
+          "stop_kind": "length"
+        }
+      },
+      "generation": {
+        "id": "0198f2a1-0000-7000-8000-000000001011",
+        "input": {
+          "text": "hi"
+        },
+        "output": {
+          "content": "hel"
+        },
+        "status": "ok",
+        "stop_kind": "length"
+      },
+      "name": "sampling/length_truncations_are_always_kept",
+      "policy": {
+        "max_bytes": 262144,
+        "mode": "full",
+        "sample_rate": 0.0
+      }
+    },
+    {
+      "config": {
+        "hash_end_user": true
+      },
+      "expect": {
+        "generation": {
+          "end_user_ref": "6d894aa3ee802549d7f340e7c1cf0d1c1cb14cd84f768d92ffaa6785337c4997",
+          "id": "0198f2a1-0000-7000-8000-000000001012",
+          "status": "ok"
+        }
+      },
+      "generation": {
+        "end_user_ref": "user-42",
+        "id": "0198f2a1-0000-7000-8000-000000001012",
+        "status": "ok"
+      },
+      "name": "end_user_ref/hashed_when_hash_end_user_is_set",
+      "note": "an unkeyed sha256 hex of the raw ref; stable within a project, not anonymisation",
+      "policy": {
+        "max_bytes": 262144,
+        "mode": "full",
+        "sample_rate": 1.0
+      }
+    }
+  ],
+  "conformance": "truncation",
+  "description": "Monitoring-log payload policy applied by the SDK before a record is enqueued. Run apply(generation, policy, config) and compare with expect.generation.",
+  "format_version": 1,
+  "generated_from": {
+    "commit": "5f04e7e4cfb66d379b2f00eef4cd3fce4ba26a61",
+    "language": "elixir",
+    "repo": "https://github.com/polimo-dev/prompton-elixir",
+    "sdk": "prompton_sdk",
+    "sdk_version": "0.1.0"
+  },
+  "limits": {
+    "error_message": "2048 bytes, fixed",
+    "input_messages_json": "max_bytes, measured on the JSON encoding of the message list",
+    "input_text": "max_bytes",
+    "input_variables_json": "max(max_bytes / 4, 64), replaced wholesale by a digest",
+    "max_bytes_default": 262144,
+    "output_content": "max(max_bytes / 4, 64) bytes",
+    "output_tool_calls_json": "max(max_bytes / 4, 64)",
+    "per_message_content": "max(max_bytes / 8, 64) bytes of the content string"
+  },
+  "order_of_operations": [
+    "keep decision (sampling; errors and stop_kind=length are always kept)",
+    "wrap a string input as {\"text\": …} and a string output as {\"content\": …}",
+    "apply mode: none drops input/output, hash replaces them with digests, full truncates",
+    "cap error.message at 2048 bytes",
+    "hash end_user_ref when hash_end_user is set",
+    "run the redact hook last"
+  ],
+  "sampling": {
+    "always_kept": [
+      "status == \"error\"",
+      "stop_kind == \"length\""
+    ],
+    "buckets": [
+      {
+        "bucket": 7030,
+        "id": "0198f2a1-0000-7000-8000-00000000100f"
+      },
+      {
+        "bucket": 3724,
+        "id": "0198f2a1-0000-7000-8000-000000001010"
+      },
+      {
+        "bucket": 8252,
+        "id": "00000000-0000-0000-0000-000000000000"
+      },
+      {
+        "bucket": 5579,
+        "id": "d2b0f1e4-6f5d-4a1e-9f3a-0b0c0d0e0f10"
+      },
+      {
+        "bucket": 2610,
+        "id": ""
+      }
+    ],
+    "formula": "bucket(id) = first 4 bytes of sha256(id) read as an unsigned big-endian 32-bit integer, mod 10000; keep when bucket < round(sample_rate * 10000)"
+  },
+  "server_field_caps": {
+    "applied_by": "server",
+    "cases": [
+      {
+        "expect": {
+          "metadata": {
+            "job": "abc",
+            "truncated_fields": [
+              "params"
+            ]
+          },
+          "params": {}
+        },
+        "input": {
+          "metadata": {
+            "job": "abc"
+          },
+          "params_json_bytes": 5752
+        },
+        "name": "params_over_4096_bytes_is_blanked"
+      },
+      {
+        "expect": {
+          "metadata": {
+            "truncated_fields": [
+              "usage.raw"
+            ]
+          },
+          "usage.raw": null
+        },
+        "input": {
+          "metadata": {},
+          "usage_raw_json_bytes": 20893
+        },
+        "name": "usage_raw_over_16384_bytes_is_blanked"
+      }
+    ],
+    "limits": {
+      "context": "2048 - over the cap the whole RECORD is rejected, not blanked",
+      "metadata": "4096 - over the cap the whole RECORD is rejected, not blanked",
+      "params": 4096,
+      "string_fields": "512 bytes for trace_id, end_user_ref, prompt, model, finish_reason, …",
+      "usage.raw": 16384
+    },
+    "note": "The SDK does not shrink params or usage.raw. The ingest endpoint blanks a field that is over its cap (it does not reject the record) and appends the field name to metadata.truncated_fields."
+  },
+  "truncation_marker": {
+    "flag": "every map that lost bytes gets \"truncated\": true",
+    "head_tail_split": "the budget left after the marker is split 60% head / 40% tail, then trimmed back to a UTF-8 character boundary",
+    "shape": "\\n…[truncated N bytes]…\\n where N = original_size - limit"
+  }
+}

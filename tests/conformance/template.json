@@ -1,0 +1,1077 @@
+{
+  "allowed_filters": [
+    "size",
+    "join",
+    "default"
+  ],
+  "allowed_tags": [
+    "assign",
+    "break",
+    "continue",
+    "for",
+    "if",
+    "unless"
+  ],
+  "cases": [
+    {
+      "engine": "liquid",
+      "expect": {
+        "output": "Hello World!"
+      },
+      "name": "output/plain",
+      "template": "Hello {{ name }}!",
+      "variables": {
+        "name": "World"
+      }
+    },
+    {
+      "engine": "liquid",
+      "expect": {
+        "output": "x"
+      },
+      "name": "output/no_spaces",
+      "template": "{{name}}",
+      "variables": {
+        "name": "x"
+      }
+    },
+    {
+      "engine": "liquid",
+      "expect": {
+        "output": "x"
+      },
+      "name": "output/extra_spaces",
+      "template": "{{    name    }}",
+      "variables": {
+        "name": "x"
+      }
+    },
+    {
+      "engine": "liquid",
+      "expect": {
+        "output": "Line 1: x\nLine 2: y\n"
+      },
+      "name": "output/multiline",
+      "template": "Line 1: {{ a }}\nLine 2: {{ b }}\n",
+      "variables": {
+        "a": "x",
+        "b": "y"
+      }
+    },
+    {
+      "engine": "liquid",
+      "expect": {
+        "output": "z-z"
+      },
+      "name": "output/repeated_variable",
+      "template": "{{ a }}-{{ a }}",
+      "variables": {
+        "a": "z"
+      }
+    },
+    {
+      "engine": "liquid",
+      "expect": {
+        "output": "<b>&amp;</b>"
+      },
+      "name": "output/no_escaping",
+      "template": "{{ html }}",
+      "variables": {
+        "html": "<b>&amp;</b>"
+      }
+    },
+    {
+      "engine": "liquid",
+      "expect": {
+        "error": "missing_variable",
+        "variable": "name"
+      },
+      "name": "missing/top_level",
+      "template": "Hello {{ name }}",
+      "variables": {}
+    },
+    {
+      "engine": "liquid",
+      "expect": {
+        "error": "missing_variable",
+        "variable": "user.name"
+      },
+      "name": "missing/nested_leaf",
+      "template": "{{ user.name }}",
+      "variables": {
+        "user": {}
+      }
+    },
+    {
+      "engine": "liquid",
+      "expect": {
+        "error": "missing_variable",
+        "variable": "x"
+      },
+      "name": "missing/with_default_filter",
+      "note": "the default filter does NOT rescue an absent key; only a key present with a nil/false/empty value",
+      "template": "{{ x | default: \"fb\" }}",
+      "variables": {}
+    },
+    {
+      "engine": "liquid",
+      "expect": {
+        "error": "missing_variable",
+        "variable": "flag"
+      },
+      "name": "missing/inside_unless",
+      "template": "{% unless flag %}off{% endunless %}",
+      "variables": {}
+    },
+    {
+      "engine": "liquid",
+      "expect": {
+        "error": "missing_variable",
+        "variable": "items"
+      },
+      "name": "missing/inside_for",
+      "template": "{% for i in items %}{{ i }}{% endfor %}",
+      "variables": {}
+    },
+    {
+      "engine": "liquid",
+      "expect": {
+        "error": "missing_variable",
+        "variable": "other"
+      },
+      "name": "missing/inside_taken_if_branch",
+      "template": "{% if flag %}{{ other }}{% endif %}",
+      "variables": {
+        "flag": true
+      }
+    },
+    {
+      "engine": "liquid",
+      "expect": {
+        "output": ""
+      },
+      "name": "missing/untaken_branch_is_not_checked",
+      "note": "variables in a branch that is not executed are never looked up",
+      "template": "{% if mode == \"a\" %}{{ only_for_a }}{% endif %}",
+      "variables": {
+        "mode": "b"
+      }
+    },
+    {
+      "engine": "liquid",
+      "expect": {
+        "output": "Ada <ada@example.com>"
+      },
+      "name": "nested/map_access",
+      "template": "{{ user.name }} <{{ user.email }}>",
+      "variables": {
+        "user": {
+          "email": "ada@example.com",
+          "name": "Ada"
+        }
+      }
+    },
+    {
+      "engine": "liquid",
+      "expect": {
+        "output": "deep"
+      },
+      "name": "nested/deep",
+      "template": "{{ a.b.c }}",
+      "variables": {
+        "a": {
+          "b": {
+            "c": "deep"
+          }
+        }
+      }
+    },
+    {
+      "engine": "liquid",
+      "expect": {
+        "output": "a/c"
+      },
+      "name": "nested/list_index",
+      "template": "{{ items[0] }}/{{ items[2] }}",
+      "variables": {
+        "items": [
+          "a",
+          "b",
+          "c"
+        ]
+      }
+    },
+    {
+      "engine": "liquid",
+      "expect": {
+        "output": "two"
+      },
+      "name": "nested/map_in_list",
+      "template": "{{ rows[1].label }}",
+      "variables": {
+        "rows": [
+          {
+            "label": "one"
+          },
+          {
+            "label": "two"
+          }
+        ]
+      }
+    },
+    {
+      "engine": "liquid",
+      "expect": {
+        "output": "3"
+      },
+      "name": "stringify/integer",
+      "template": "{{ n }}",
+      "variables": {
+        "n": 3
+      }
+    },
+    {
+      "engine": "liquid",
+      "expect": {
+        "output": "1.5"
+      },
+      "name": "stringify/float",
+      "template": "{{ n }}",
+      "variables": {
+        "n": 1.5
+      }
+    },
+    {
+      "engine": "liquid",
+      "expect": {
+        "output": "2.0"
+      },
+      "name": "stringify/float_integral",
+      "note": "an integral float keeps its decimal point",
+      "template": "{{ n }}",
+      "variables": {
+        "n": 2.0
+      }
+    },
+    {
+      "engine": "liquid",
+      "expect": {
+        "output": "-12"
+      },
+      "name": "stringify/negative",
+      "template": "{{ n }}",
+      "variables": {
+        "n": -12
+      }
+    },
+    {
+      "engine": "liquid",
+      "expect": {
+        "output": "true"
+      },
+      "name": "stringify/true",
+      "template": "{{ b }}",
+      "variables": {
+        "b": true
+      }
+    },
+    {
+      "engine": "liquid",
+      "expect": {
+        "output": "false"
+      },
+      "name": "stringify/false",
+      "template": "{{ b }}",
+      "variables": {
+        "b": false
+      }
+    },
+    {
+      "engine": "liquid",
+      "expect": {
+        "output": "[]"
+      },
+      "name": "stringify/nil",
+      "note": "a present nil renders as empty",
+      "template": "[{{ x }}]",
+      "variables": {
+        "x": null
+      }
+    },
+    {
+      "engine": "liquid",
+      "expect": {
+        "output": "[]"
+      },
+      "name": "stringify/empty_string",
+      "template": "[{{ x }}]",
+      "variables": {
+        "x": ""
+      }
+    },
+    {
+      "engine": "liquid",
+      "expect": {
+        "output": "ab"
+      },
+      "name": "stringify/list",
+      "note": "a list renders as its elements concatenated with no separator (Liquid rule)",
+      "template": "{{ items }}",
+      "variables": {
+        "items": [
+          "a",
+          "b"
+        ]
+      }
+    },
+    {
+      "engine": "liquid",
+      "expect": {
+        "output": "123"
+      },
+      "name": "stringify/list_of_numbers",
+      "template": "{{ items }}",
+      "variables": {
+        "items": [
+          1,
+          2,
+          3
+        ]
+      }
+    },
+    {
+      "engine": "liquid",
+      "expect": {
+        "output": "a,b,"
+      },
+      "name": "for/basic",
+      "template": "{% for i in items %}{{ i }},{% endfor %}",
+      "variables": {
+        "items": [
+          "a",
+          "b"
+        ]
+      }
+    },
+    {
+      "engine": "liquid",
+      "expect": {
+        "output": ""
+      },
+      "name": "for/empty_list",
+      "template": "{% for i in items %}{{ i }}{% endfor %}",
+      "variables": {
+        "items": []
+      }
+    },
+    {
+      "engine": "liquid",
+      "expect": {
+        "output": "none"
+      },
+      "name": "for/else",
+      "template": "{% for i in items %}{{ i }}{% else %}none{% endfor %}",
+      "variables": {
+        "items": []
+      }
+    },
+    {
+      "engine": "liquid",
+      "expect": {
+        "output": "1:a2:b3:c"
+      },
+      "name": "for/forloop_index_and_last",
+      "template": "{% for i in items %}{{ forloop.index }}:{{ i }}{% unless forloop.last %} {% endunless %}{% endfor %}",
+      "variables": {
+        "items": [
+          "a",
+          "b",
+          "c"
+        ]
+      }
+    },
+    {
+      "engine": "liquid",
+      "expect": {
+        "output": "0true2;1false2;"
+      },
+      "name": "for/forloop_index0_first_length",
+      "template": "{% for i in items %}{{ forloop.index0 }}{{ forloop.first }}{{ forloop.length }};{% endfor %}",
+      "variables": {
+        "items": [
+          "a",
+          "b"
+        ]
+      }
+    },
+    {
+      "engine": "liquid",
+      "expect": {
+        "output": "ab"
+      },
+      "name": "for/break",
+      "template": "{% for i in items %}{% if i == \"c\" %}{% break %}{% endif %}{{ i }}{% endfor %}",
+      "variables": {
+        "items": [
+          "a",
+          "b",
+          "c",
+          "d"
+        ]
+      }
+    },
+    {
+      "engine": "liquid",
+      "expect": {
+        "output": "ac"
+      },
+      "name": "for/continue",
+      "template": "{% for i in items %}{% if i == \"b\" %}{% continue %}{% endif %}{{ i }}{% endfor %}",
+      "variables": {
+        "items": [
+          "a",
+          "b",
+          "c"
+        ]
+      }
+    },
+    {
+      "engine": "liquid",
+      "expect": {
+        "output": "- one\n- two\n"
+      },
+      "name": "for/over_maps",
+      "template": "{% for row in rows %}- {{ row.label }}\n{% endfor %}",
+      "variables": {
+        "rows": [
+          {
+            "label": "one"
+          },
+          {
+            "label": "two"
+          }
+        ]
+      }
+    },
+    {
+      "engine": "liquid",
+      "expect": {
+        "output": "big"
+      },
+      "name": "if/then",
+      "template": "{% if n > 2 %}big{% endif %}",
+      "variables": {
+        "n": 5
+      }
+    },
+    {
+      "engine": "liquid",
+      "expect": {
+        "output": "small"
+      },
+      "name": "if/elsif",
+      "template": "{% if n > 2 %}big{% elsif n > 0 %}small{% else %}none{% endif %}",
+      "variables": {
+        "n": 1
+      }
+    },
+    {
+      "engine": "liquid",
+      "expect": {
+        "output": "none"
+      },
+      "name": "if/else",
+      "template": "{% if n > 2 %}big{% elsif n > 0 %}small{% else %}none{% endif %}",
+      "variables": {
+        "n": -1
+      }
+    },
+    {
+      "engine": "liquid",
+      "expect": {
+        "output": "안녕"
+      },
+      "name": "if/string_equality",
+      "template": "{% if lang == \"ko\" %}안녕{% else %}hi{% endif %}",
+      "variables": {
+        "lang": "ko"
+      }
+    },
+    {
+      "engine": "liquid",
+      "expect": {
+        "output": "no"
+      },
+      "name": "if/truthiness_of_nil",
+      "template": "{% if x %}yes{% else %}no{% endif %}",
+      "variables": {
+        "x": null
+      }
+    },
+    {
+      "engine": "liquid",
+      "expect": {
+        "output": "no"
+      },
+      "name": "if/truthiness_of_false",
+      "template": "{% if x %}yes{% else %}no{% endif %}",
+      "variables": {
+        "x": false
+      }
+    },
+    {
+      "engine": "liquid",
+      "expect": {
+        "output": "yes"
+      },
+      "name": "if/truthiness_of_empty_string",
+      "note": "an empty string is truthy in Liquid",
+      "template": "{% if x %}yes{% else %}no{% endif %}",
+      "variables": {
+        "x": ""
+      }
+    },
+    {
+      "engine": "liquid",
+      "expect": {
+        "output": "some"
+      },
+      "name": "if/and_or",
+      "template": "{% if a and b %}both{% endif %}{% if a or c %}some{% endif %}",
+      "variables": {
+        "a": true,
+        "b": false,
+        "c": false
+      }
+    },
+    {
+      "engine": "liquid",
+      "expect": {
+        "output": "off"
+      },
+      "name": "unless/false_condition",
+      "template": "{% unless flag %}off{% endunless %}",
+      "variables": {
+        "flag": false
+      }
+    },
+    {
+      "engine": "liquid",
+      "expect": {
+        "output": ""
+      },
+      "name": "unless/true_condition",
+      "template": "{% unless flag %}off{% endunless %}",
+      "variables": {
+        "flag": true
+      }
+    },
+    {
+      "engine": "liquid",
+      "expect": {
+        "output": "hi Ada"
+      },
+      "name": "assign/literal",
+      "template": "{% assign greeting = \"hi\" %}{{ greeting }} {{ name }}",
+      "variables": {
+        "name": "Ada"
+      }
+    },
+    {
+      "engine": "liquid",
+      "expect": {
+        "output": "Ada"
+      },
+      "name": "assign/from_variable",
+      "template": "{% assign copy = name %}{{ copy }}",
+      "variables": {
+        "name": "Ada"
+      }
+    },
+    {
+      "engine": "liquid",
+      "expect": {
+        "output": "3"
+      },
+      "name": "assign/with_filter",
+      "template": "{% assign n = items | size %}{{ n }}",
+      "variables": {
+        "items": [
+          1,
+          2,
+          3
+        ]
+      }
+    },
+    {
+      "engine": "liquid",
+      "expect": {
+        "output": "3"
+      },
+      "name": "filter/size_list",
+      "template": "{{ items | size }}",
+      "variables": {
+        "items": [
+          1,
+          2,
+          3
+        ]
+      }
+    },
+    {
+      "engine": "liquid",
+      "expect": {
+        "output": "4"
+      },
+      "name": "filter/size_string",
+      "template": "{{ s | size }}",
+      "variables": {
+        "s": "abcd"
+      }
+    },
+    {
+      "engine": "liquid",
+      "expect": {
+        "output": "2"
+      },
+      "name": "filter/size_string_multibyte",
+      "note": "size counts characters, not bytes",
+      "template": "{{ s | size }}",
+      "variables": {
+        "s": "한글"
+      }
+    },
+    {
+      "engine": "liquid",
+      "expect": {
+        "output": "a, b"
+      },
+      "name": "filter/join_with_argument",
+      "template": "{{ items | join: \", \" }}",
+      "variables": {
+        "items": [
+          "a",
+          "b"
+        ]
+      }
+    },
+    {
+      "engine": "liquid",
+      "expect": {
+        "output": "a b"
+      },
+      "name": "filter/join_without_argument",
+      "note": "the default separator is a single space",
+      "template": "{{ items | join }}",
+      "variables": {
+        "items": [
+          "a",
+          "b"
+        ]
+      }
+    },
+    {
+      "engine": "liquid",
+      "expect": {
+        "output": "fallback"
+      },
+      "name": "filter/default_on_nil",
+      "template": "{{ x | default: \"fallback\" }}",
+      "variables": {
+        "x": null
+      }
+    },
+    {
+      "engine": "liquid",
+      "expect": {
+        "output": "fb"
+      },
+      "name": "filter/default_on_empty_string",
+      "note": "an empty string is blank, so default applies",
+      "template": "{{ x | default: \"fb\" }}",
+      "variables": {
+        "x": ""
+      }
+    },
+    {
+      "engine": "liquid",
+      "expect": {
+        "output": "fb"
+      },
+      "name": "filter/default_on_false",
+      "template": "{{ x | default: \"fb\" }}",
+      "variables": {
+        "x": false
+      }
+    },
+    {
+      "engine": "liquid",
+      "expect": {
+        "output": "v"
+      },
+      "name": "filter/default_on_present_value",
+      "template": "{{ x | default: \"fb\" }}",
+      "variables": {
+        "x": "v"
+      }
+    },
+    {
+      "engine": "liquid",
+      "expect": {
+        "output": ""
+      },
+      "name": "filter/default_without_argument",
+      "template": "{{ x | default }}",
+      "variables": {
+        "x": null
+      }
+    },
+    {
+      "engine": "liquid",
+      "expect": {
+        "output": "5"
+      },
+      "name": "filter/chained",
+      "template": "{{ items | join: \"|\" | size }}",
+      "variables": {
+        "items": [
+          "ab",
+          "cd"
+        ]
+      }
+    },
+    {
+      "engine": "raw",
+      "expect": {
+        "output": "Hello {{ name }} {% if x %}kept{% endif %}"
+      },
+      "name": "raw_engine/passthrough",
+      "template": "Hello {{ name }} {% if x %}kept{% endif %}",
+      "variables": {
+        "name": "ignored"
+      }
+    },
+    {
+      "engine": "raw",
+      "expect": {
+        "output": "{% include \"x\" %} {{ a"
+      },
+      "name": "raw_engine/unparseable_source_is_returned_verbatim",
+      "note": "the raw engine never parses, so nothing can fail",
+      "template": "{% include \"x\" %} {{ a",
+      "variables": {}
+    },
+    {
+      "engine": "liquid",
+      "expect": {
+        "error": "parse_error"
+      },
+      "name": "rejected/include",
+      "template": "{% include \"other\" %}",
+      "variables": {}
+    },
+    {
+      "engine": "liquid",
+      "expect": {
+        "error": "parse_error"
+      },
+      "name": "rejected/capture",
+      "template": "{% capture x %}y{% endcapture %}{{ x }}",
+      "variables": {}
+    },
+    {
+      "engine": "liquid",
+      "expect": {
+        "error": "parse_error"
+      },
+      "name": "rejected/raw_tag",
+      "template": "{% raw %}{{ a }}{% endraw %}",
+      "variables": {}
+    },
+    {
+      "engine": "liquid",
+      "expect": {
+        "error": "parse_error"
+      },
+      "name": "rejected/case",
+      "template": "{% case n %}{% when 1 %}one{% endcase %}",
+      "variables": {
+        "n": 1
+      }
+    },
+    {
+      "engine": "liquid",
+      "expect": {
+        "error": "parse_error"
+      },
+      "name": "rejected/cycle",
+      "template": "{% cycle \"a\", \"b\" %}",
+      "variables": {}
+    },
+    {
+      "engine": "liquid",
+      "expect": {
+        "error": "parse_error"
+      },
+      "name": "rejected/comment",
+      "template": "{% comment %}hidden{% endcomment %}",
+      "variables": {}
+    },
+    {
+      "engine": "liquid",
+      "expect": {
+        "error": "parse_error"
+      },
+      "name": "rejected/unclosed_tag",
+      "template": "{% if a %}no end",
+      "variables": {
+        "a": true
+      }
+    },
+    {
+      "engine": "liquid",
+      "expect": {
+        "output": "ABC"
+      },
+      "name": "nonnormative/unknown_filter_is_applied_at_render_time",
+      "normative": false,
+      "note": "The filter whitelist is enforced by lint/1 (and by the server when a prompt version is committed), NOT by render. solid applies any filter it knows. An SDK whose template engine only implements size/join/default may raise instead; both are acceptable, because such a template can never be committed to PromptOn.",
+      "template": "{{ s | upcase }}",
+      "variables": {
+        "s": "abc"
+      }
+    },
+    {
+      "engine": "liquid",
+      "expect": {
+        "output": "x"
+      },
+      "name": "nonnormative/whitespace_control_renders",
+      "normative": false,
+      "note": "Whitespace control is rejected by lint/1 but the renderer honours it. Behaviour of a template that lint rejects is unspecified.",
+      "template": "{%- if a -%}x{%- endif -%}",
+      "variables": {
+        "a": true
+      }
+    },
+    {
+      "engine": "liquid",
+      "expect": {
+        "output": "%{\"a\" => 1}"
+      },
+      "name": "nonnormative/map_value_stringification",
+      "normative": false,
+      "note": "Rendering a map into an output position produces a language-specific debug string (here Elixir's inspect). Never rely on it.",
+      "template": "{{ m }}",
+      "variables": {
+        "m": {
+          "a": 1
+        }
+      }
+    },
+    {
+      "engine": "liquid",
+      "expect": {
+        "output": ""
+      },
+      "name": "nonnormative/undefined_variable_in_if_condition",
+      "normative": false,
+      "note": "solid 1.3.x discards the undefined-variable error accumulated while evaluating a false if/elsif condition, so this renders empty instead of failing. An SDK that raises missing_variable here is also acceptable. Only OUTPUT positions ({{ }}), for enumerables, unless conditions and assign are guaranteed to fail.",
+      "template": "{% if flag == \"x\" %}y{% endif %}",
+      "variables": {}
+    }
+  ],
+  "conformance": "template",
+  "description": "Prompt rendering: the Liquid subset PromptOn allows. `cases` are executed with render(template, variables, engine: engine) and must match `expect` exactly.",
+  "engines": [
+    "liquid",
+    "raw"
+  ],
+  "error_categories": {
+    "missing_variable": "a variable the template reads at an output position, a for enumerable, an unless condition or an assign source is absent from `variables`. `expect.variable` is the reported name (dotted for nested access).",
+    "parse_error": "the template uses a construct outside the allowed tag set, or is malformed",
+    "render_error": "the template parsed but rendering failed for another reason"
+  },
+  "format_version": 1,
+  "generated_from": {
+    "commit": "5f04e7e4cfb66d379b2f00eef4cd3fce4ba26a61",
+    "language": "elixir",
+    "repo": "https://github.com/polimo-dev/prompton-elixir",
+    "sdk": "prompton_sdk",
+    "sdk_version": "0.1.0"
+  },
+  "lint_cases": [
+    {
+      "expect": {
+        "lint": "ok"
+      },
+      "name": "lint/plain_is_ok",
+      "template": "Hello {{ name }}"
+    },
+    {
+      "expect": {
+        "lint": "ok"
+      },
+      "name": "lint/allowed_tags_are_ok",
+      "template": "{% assign a = 1 %}{% if a %}{% for i in xs %}{% unless i %}{% break %}{% endunless %}{% continue %}{% endfor %}{% endif %}"
+    },
+    {
+      "expect": {
+        "lint": "ok"
+      },
+      "name": "lint/allowed_filters_are_ok",
+      "template": "{{ xs | size }}{{ xs | join: \",\" }}{{ x | default: 1 }}"
+    },
+    {
+      "expect": {
+        "lint": "error",
+        "reasons": [
+          {
+            "kind": "disallowed_filter",
+            "value": "upcase"
+          }
+        ]
+      },
+      "name": "lint/unknown_filter",
+      "template": "{{ s | upcase }}"
+    },
+    {
+      "expect": {
+        "lint": "error",
+        "reasons": [
+          {
+            "kind": "disallowed_tag",
+            "value": "include"
+          }
+        ]
+      },
+      "name": "lint/include_tag",
+      "template": "{% include \"other\" %}"
+    },
+    {
+      "expect": {
+        "lint": "error",
+        "reasons": [
+          {
+            "kind": "disallowed_tag",
+            "value": "capture"
+          },
+          {
+            "kind": "disallowed_tag",
+            "value": "endcapture"
+          }
+        ]
+      },
+      "name": "lint/capture_tag",
+      "template": "{% capture x %}y{% endcapture %}"
+    },
+    {
+      "expect": {
+        "lint": "error",
+        "reasons": [
+          {
+            "kind": "disallowed_tag",
+            "value": "liquid"
+          }
+        ]
+      },
+      "name": "lint/liquid_tag",
+      "template": "{% liquid assign x = 1 %}"
+    },
+    {
+      "expect": {
+        "lint": "error",
+        "reasons": [
+          {
+            "kind": "whitespace_control",
+            "value": "{%-"
+          },
+          {
+            "kind": "whitespace_control",
+            "value": "-%}"
+          }
+        ]
+      },
+      "name": "lint/whitespace_control_tag",
+      "template": "{%- if a -%}x{%- endif -%}"
+    },
+    {
+      "expect": {
+        "lint": "error",
+        "reasons": [
+          {
+            "kind": "whitespace_control",
+            "value": "{{-"
+          },
+          {
+            "kind": "whitespace_control",
+            "value": "-}}"
+          }
+        ]
+      },
+      "name": "lint/whitespace_control_output",
+      "template": "{{- a -}}"
+    },
+    {
+      "expect": {
+        "lint": "error",
+        "reasons": [
+          {
+            "kind": "parse",
+            "value": "Expected 'endif'"
+          }
+        ]
+      },
+      "name": "lint/parse_error",
+      "template": "{% if a %}no end"
+    }
+  ],
+  "variables_cases": [
+    {
+      "expect": {
+        "variables": [
+          "a",
+          "b"
+        ]
+      },
+      "name": "variables/output_positions",
+      "template": "{{ a }} {{ b.c }}"
+    },
+    {
+      "expect": {
+        "variables": [
+          "items"
+        ]
+      },
+      "name": "variables/for_enumerable_only",
+      "template": "{% for item in items %}{{ item }}{% endfor %}"
+    },
+    {
+      "expect": {
+        "variables": [
+          "y"
+        ]
+      },
+      "name": "variables/assign_target_excluded",
+      "template": "{% assign x = y %}{{ x }}"
+    },
+    {
+      "expect": {
+        "variables": [
+          "mode"
+        ]
+      },
+      "name": "variables/condition_variables_included",
+      "template": "{% if mode == \"a\" %}x{% endif %}"
+    },
+    {
+      "expect": {
+        "variables": [
+          "xs"
+        ]
+      },
+      "name": "variables/forloop_excluded",
+      "template": "{% for i in xs %}{{ forloop.index }}{% endfor %}"
+    }
+  ]
+}

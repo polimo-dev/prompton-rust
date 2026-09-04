@@ -1,0 +1,592 @@
+//! The snapshot document: what `GET /api/v1/snapshot?environment=…` returns, decoded.
+//!
+//! One request returns everything live in one environment — every deployment, the prompt versions
+//! and models they pin, and the use case metadata — and the SDK resolves against it locally. The
+//! SDK reads **schema version 3 only**: a v1/v2 document (a stale disk cache, an old bundle) is
+//! refused and the poller keeps looking for a good one, while a version above 3 is decoded on its
+//! known fields with a warning, because v1 only ever adds fields.
+
+use std::collections::BTreeMap;
+
+use serde::{Deserialize, Serialize};
+use serde_json::{Map, Value};
+
+use crate::template::Engine;
+
+/// The schema version this SDK reads.
+pub const SCHEMA_VERSION: i64 = 3;
+
+/// The default payload cap when a use case carries no `payload_policy`.
+pub const DEFAULT_MAX_BYTES: usize = 262_144;
+
+/// What a use case calls: chat completion, plain text completion, or an embedding.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Kind {
+    /// A chat completion: the prompt version carries `messages`.
+    Chat,
+    /// A single-string completion: the prompt version carries `text_template`.
+    Text,
+    /// An embedding call: no prompt at all.
+    Embedding,
+    /// A kind this SDK version does not know (v1 only adds fields).
+    Other(String),
+}
+
+impl Serialize for Kind {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_str(self.as_str())
+    }
+}
+
+impl<'de> Deserialize<'de> for Kind {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Kind, D::Error> {
+        let raw = String::deserialize(deserializer)?;
+        Ok(Kind::from_wire(Some(&raw)))
+    }
+}
+
+impl Kind {
+    /// The wire value.
+    pub fn as_str(&self) -> &str {
+        match self {
+            Kind::Chat => "chat",
+            Kind::Text => "text",
+            Kind::Embedding => "embedding",
+            Kind::Other(other) => other,
+        }
+    }
+
+    fn from_wire(value: Option<&str>) -> Kind {
+        match value {
+            None | Some("chat") => Kind::Chat,
+            Some("text") => Kind::Text,
+            Some("embedding") => Kind::Embedding,
+            Some(other) => Kind::Other(other.to_string()),
+        }
+    }
+}
+
+/// One chat message of a prompt version, before or after rendering.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Message {
+    /// `system`, `user`, `assistant`, …
+    pub role: String,
+    /// The message text — a Liquid template before rendering, the final text after.
+    pub content: String,
+    /// The optional OpenAI-style `name`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+}
+
+impl Message {
+    /// A message with no `name`.
+    pub fn new(role: impl Into<String>, content: impl Into<String>) -> Message {
+        Message {
+            role: role.into(),
+            content: content.into(),
+            name: None,
+        }
+    }
+}
+
+/// One entry of a use case's `input_schema`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct InputVariable {
+    /// The variable name used in the template.
+    pub name: String,
+    /// `string`, `number`, `boolean`, `list` or `map`.
+    pub r#type: String,
+    /// Whether a render must supply it.
+    pub required: bool,
+    /// Free-form documentation.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+}
+
+/// How much of a generation's `input`/`output` may be stored.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum PayloadMode {
+    /// Store the payload, subject to sampling and truncation.
+    Full,
+    /// Store only the SHA-256 and byte size of each part.
+    Hash,
+    /// Store nothing; the narrow record still goes.
+    None,
+}
+
+/// The use case's payload storage policy, as the snapshot carries it.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct PayloadPolicy {
+    /// `full`, `hash` or `none`.
+    pub mode: PayloadMode,
+    /// The fraction of successful records whose payload is kept, 0.0–1.0.
+    pub sample_rate: f64,
+    /// The truncation budget every other limit is derived from.
+    pub max_bytes: usize,
+    /// How long the server keeps the payload.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub retention_days: Option<i64>,
+    /// Whether the server encrypts the payload at rest.
+    #[serde(default)]
+    pub encrypt: bool,
+}
+
+impl Default for PayloadPolicy {
+    fn default() -> PayloadPolicy {
+        PayloadPolicy {
+            mode: PayloadMode::Full,
+            sample_rate: 1.0,
+            max_bytes: DEFAULT_MAX_BYTES,
+            retention_days: None,
+            encrypt: false,
+        }
+    }
+}
+
+/// One use case: a single LLM call site in the app.
+#[derive(Debug, Clone, PartialEq)]
+pub struct UseCase {
+    /// The use case id.
+    pub id: Option<String>,
+    /// The use case key (`diary_generation`).
+    pub key: String,
+    /// Chat, text or embedding.
+    pub kind: Kind,
+    /// The declared input variables.
+    pub input_schema: Vec<InputVariable>,
+    /// Parameters every deployment of this use case starts from.
+    pub default_params: Map<String, Value>,
+    /// The payload storage policy, when the snapshot carries one.
+    pub payload_policy: Option<PayloadPolicy>,
+}
+
+/// One live deployment revision: a pin, not a router — one model plus one pinned prompt version
+/// per prompt name.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Deployment {
+    /// The deployment id.
+    pub id: Option<String>,
+    /// The use case this deployment belongs to.
+    pub use_case_key: String,
+    /// The revision number.
+    pub revision: Option<i64>,
+    /// The catalog id of the pinned model.
+    pub model_id: Option<String>,
+    /// Parameters layered over the use case's `default_params`.
+    pub params: Map<String, Value>,
+    /// Provider options layered over the model's `provider_options`.
+    pub provider_options: Map<String, Value>,
+    /// Prompt name to prompt version id. `{}` for an embedding use case.
+    pub prompt_pins: BTreeMap<String, String>,
+}
+
+/// An immutable prompt version.
+#[derive(Debug, Clone, PartialEq)]
+pub struct PromptVersion {
+    /// The version id.
+    pub id: String,
+    /// The prompt this version belongs to.
+    pub prompt_id: Option<String>,
+    /// The version number, counting from 1.
+    pub number: Option<i64>,
+    /// Which template engine the version was committed with.
+    pub engine: Engine,
+    /// The chat messages, for a `chat` use case.
+    pub messages: Option<Vec<Message>>,
+    /// The single template string, for a `text` use case.
+    pub text_template: Option<String>,
+}
+
+/// One model in the project's catalog.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Model {
+    /// The catalog id (a UUID).
+    pub id: String,
+    /// The provider name (`openrouter`, …).
+    pub provider: Option<String>,
+    /// The provider-side model string your app sends to the provider.
+    pub model_id: Option<String>,
+    /// The human-readable name.
+    pub display_name: Option<String>,
+    /// Free-form catalog metadata.
+    pub metadata: Map<String, Value>,
+    /// Provider options a deployment layers on top of.
+    pub provider_options: Map<String, Value>,
+    /// Advertised capabilities (`tools`, `streaming`, …).
+    pub capabilities: Vec<String>,
+    /// `active`, `deprecated`, …
+    pub status: Option<String>,
+}
+
+/// A decoded snapshot document.
+#[derive(Debug, Clone, PartialEq)]
+pub struct SnapshotDocument {
+    /// The document's schema version.
+    pub schema_version: i64,
+    /// The project slug the snapshot belongs to.
+    pub project: Option<String>,
+    /// The environment the snapshot belongs to.
+    pub environment: Option<String>,
+    /// Use cases by key.
+    pub use_cases: BTreeMap<String, UseCase>,
+    /// Live deployments by use case key.
+    pub deployments: BTreeMap<String, Deployment>,
+    /// Prompt versions by id.
+    pub prompt_versions: BTreeMap<String, PromptVersion>,
+    /// Models by catalog id.
+    pub models: BTreeMap<String, Model>,
+}
+
+/// Why a snapshot document could not be decoded.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum DecodeError {
+    /// The bytes are not JSON.
+    #[error("snapshot is not valid JSON: {0}")]
+    InvalidJson(String),
+    /// The JSON is not a snapshot document.
+    #[error("invalid snapshot: {0}")]
+    Invalid(String),
+    /// A v1 or v2 document: this SDK reads v3.
+    #[error("unsupported snapshot schema_version {0} (this SDK reads {SCHEMA_VERSION})")]
+    UnsupportedSchemaVersion(i64),
+}
+
+impl SnapshotDocument {
+    /// Decodes the raw response bytes.
+    pub fn from_json(bytes: &[u8]) -> Result<(SnapshotDocument, Vec<String>), DecodeError> {
+        let value: Value = serde_json::from_slice(bytes)
+            .map_err(|err| DecodeError::InvalidJson(err.to_string()))?;
+        SnapshotDocument::from_value(&value)
+    }
+
+    /// Decodes an already-parsed JSON value.
+    pub fn from_value(value: &Value) -> Result<(SnapshotDocument, Vec<String>), DecodeError> {
+        let map = value
+            .as_object()
+            .ok_or_else(|| DecodeError::Invalid("top level must be an object".to_string()))?;
+
+        let mut warnings = Vec::new();
+        let schema_version = match map.get("schema_version").and_then(Value::as_i64) {
+            Some(SCHEMA_VERSION) => SCHEMA_VERSION,
+            Some(version) if version > SCHEMA_VERSION => {
+                warnings.push(format!(
+                    "unknown schema_version {version}: decoding the fields this SDK knows"
+                ));
+                version
+            }
+            Some(version) => return Err(DecodeError::UnsupportedSchemaVersion(version)),
+            None => {
+                return Err(DecodeError::Invalid(
+                    "schema_version is required".to_string(),
+                ))
+            }
+        };
+
+        let use_cases_raw = map
+            .get("use_cases")
+            .and_then(Value::as_object)
+            .ok_or_else(|| {
+                DecodeError::Invalid("use_cases is required and must be an object".to_string())
+            })?;
+
+        let mut use_cases = BTreeMap::new();
+        for (key, raw) in use_cases_raw {
+            match raw.as_object() {
+                Some(raw) => {
+                    use_cases.insert(key.clone(), decode_use_case(key, raw, &mut warnings));
+                }
+                None => warnings.push(format!("use case {key} is not an object")),
+            }
+        }
+
+        let mut deployments = BTreeMap::new();
+        if let Some(raw_map) = map.get("deployments") {
+            match raw_map.as_object() {
+                Some(raw_map) => {
+                    for (key, raw) in raw_map {
+                        match raw.as_object() {
+                            Some(raw) => {
+                                deployments.insert(key.clone(), decode_deployment(key, raw));
+                            }
+                            None => warnings.push(format!("deployment {key} is not an object")),
+                        }
+                    }
+                }
+                None if !raw_map.is_null() => {
+                    warnings.push("deployments is not an object".to_string())
+                }
+                None => {}
+            }
+        }
+
+        let mut prompt_versions = BTreeMap::new();
+        if let Some(raw_map) = map.get("prompt_versions").and_then(Value::as_object) {
+            for (id, raw) in raw_map {
+                match raw.as_object() {
+                    Some(raw) => {
+                        let version = decode_prompt_version(id, raw);
+                        prompt_versions.insert(version.id.clone(), version);
+                    }
+                    None => warnings.push(format!("prompt version {id} is not an object")),
+                }
+            }
+        }
+
+        let mut models = BTreeMap::new();
+        if let Some(raw_map) = map.get("models").and_then(Value::as_object) {
+            for (id, raw) in raw_map {
+                match raw.as_object() {
+                    Some(raw) => {
+                        let model = decode_model(id, raw);
+                        models.insert(model.id.clone(), model);
+                    }
+                    None => warnings.push(format!("model {id} is not an object")),
+                }
+            }
+        }
+
+        Ok((
+            SnapshotDocument {
+                schema_version,
+                project: string_of(map.get("project")),
+                environment: string_of(map.get("environment")),
+                use_cases,
+                deployments,
+                prompt_versions,
+                models,
+            },
+            warnings,
+        ))
+    }
+
+    /// The deployment pinned for a use case, when there is one.
+    pub fn deployment(&self, use_case_key: &str) -> Option<&Deployment> {
+        self.deployments.get(use_case_key)
+    }
+
+    /// The prompt names the live deployment pins, sorted.
+    pub fn prompt_names(&self, use_case_key: &str) -> Vec<String> {
+        match self.deployments.get(use_case_key) {
+            Some(deployment) => deployment.prompt_pins.keys().cloned().collect(),
+            None => Vec::new(),
+        }
+    }
+}
+
+fn decode_use_case(key: &str, raw: &Map<String, Value>, warnings: &mut Vec<String>) -> UseCase {
+    let mut input_schema = Vec::new();
+    if let Some(entries) = raw.get("input_schema").and_then(Value::as_array) {
+        for entry in entries {
+            match entry.as_object() {
+                Some(entry) => input_schema.push(InputVariable {
+                    name: string_of(entry.get("name")).unwrap_or_default(),
+                    r#type: string_of(entry.get("type")).unwrap_or_else(|| "string".to_string()),
+                    required: entry
+                        .get("required")
+                        .and_then(Value::as_bool)
+                        .unwrap_or(false),
+                    description: string_of(entry.get("description")),
+                }),
+                None => warnings.push(format!("input_schema entry of {key} is not an object")),
+            }
+        }
+    }
+
+    UseCase {
+        id: string_of(raw.get("id")),
+        key: key.to_string(),
+        kind: Kind::from_wire(raw.get("kind").and_then(Value::as_str)),
+        input_schema,
+        default_params: object_of(raw.get("default_params")),
+        payload_policy: raw
+            .get("payload_policy")
+            .and_then(Value::as_object)
+            .map(decode_payload_policy),
+    }
+}
+
+fn decode_payload_policy(raw: &Map<String, Value>) -> PayloadPolicy {
+    PayloadPolicy {
+        mode: match raw.get("mode").and_then(Value::as_str) {
+            Some("hash") => PayloadMode::Hash,
+            Some("none") => PayloadMode::None,
+            _ => PayloadMode::Full,
+        },
+        sample_rate: raw
+            .get("sample_rate")
+            .and_then(Value::as_f64)
+            .unwrap_or(1.0)
+            .clamp(0.0, 1.0),
+        max_bytes: raw
+            .get("max_bytes")
+            .and_then(Value::as_u64)
+            .filter(|bytes| *bytes > 0)
+            .map(|bytes| bytes as usize)
+            .unwrap_or(DEFAULT_MAX_BYTES),
+        retention_days: raw.get("retention_days").and_then(Value::as_i64),
+        encrypt: raw.get("encrypt").and_then(Value::as_bool).unwrap_or(false),
+    }
+}
+
+fn decode_deployment(key: &str, raw: &Map<String, Value>) -> Deployment {
+    let mut prompt_pins = BTreeMap::new();
+    if let Some(pins) = raw.get("prompt_pins").and_then(Value::as_object) {
+        for (name, version_id) in pins {
+            if let Some(version_id) = version_id.as_str() {
+                prompt_pins.insert(name.clone(), version_id.to_string());
+            }
+        }
+    }
+
+    Deployment {
+        id: string_of(raw.get("id")),
+        use_case_key: string_of(raw.get("use_case_key")).unwrap_or_else(|| key.to_string()),
+        revision: raw.get("revision").and_then(Value::as_i64),
+        model_id: string_of(raw.get("model_id")),
+        params: object_of(raw.get("params")),
+        provider_options: object_of(raw.get("provider_options")),
+        prompt_pins,
+    }
+}
+
+fn decode_prompt_version(id: &str, raw: &Map<String, Value>) -> PromptVersion {
+    let messages = raw
+        .get("messages")
+        .and_then(Value::as_array)
+        .map(|entries| {
+            entries
+                .iter()
+                .filter_map(|entry| entry.as_object())
+                .map(|entry| Message {
+                    role: string_of(entry.get("role")).unwrap_or_default(),
+                    content: string_of(entry.get("content")).unwrap_or_default(),
+                    name: string_of(entry.get("name")),
+                })
+                .collect::<Vec<_>>()
+        });
+
+    PromptVersion {
+        id: string_of(raw.get("id")).unwrap_or_else(|| id.to_string()),
+        prompt_id: string_of(raw.get("prompt_id")),
+        number: raw.get("number").and_then(Value::as_i64),
+        engine: Engine::from_wire(raw.get("engine").and_then(Value::as_str)),
+        messages,
+        text_template: string_of(raw.get("text_template")),
+    }
+}
+
+fn decode_model(id: &str, raw: &Map<String, Value>) -> Model {
+    Model {
+        id: string_of(raw.get("id")).unwrap_or_else(|| id.to_string()),
+        provider: string_of(raw.get("provider")),
+        model_id: string_of(raw.get("model_id")),
+        display_name: string_of(raw.get("display_name")),
+        metadata: object_of(raw.get("metadata")),
+        provider_options: object_of(raw.get("provider_options")),
+        capabilities: raw
+            .get("capabilities")
+            .and_then(Value::as_array)
+            .map(|entries| {
+                entries
+                    .iter()
+                    .filter_map(Value::as_str)
+                    .map(str::to_string)
+                    .collect()
+            })
+            .unwrap_or_default(),
+        status: string_of(raw.get("status")),
+    }
+}
+
+fn string_of(value: Option<&Value>) -> Option<String> {
+    match value {
+        Some(Value::String(string)) => Some(string.clone()),
+        _ => None,
+    }
+}
+
+fn object_of(value: Option<&Value>) -> Map<String, Value> {
+    match value {
+        Some(Value::Object(map)) => map.clone(),
+        _ => Map::new(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    fn document() -> Value {
+        json!({
+            "schema_version": 3,
+            "project": "demo",
+            "environment": "production",
+            "use_cases": {
+                "greeting": {
+                    "id": "u1", "kind": "chat",
+                    "input_schema": [{"name": "name", "type": "string", "required": true}],
+                    "default_params": {"max_tokens": 512},
+                    "payload_policy": {"mode": "hash", "sample_rate": 0.5, "max_bytes": 1024,
+                                       "retention_days": 30, "encrypt": true}
+                }
+            },
+            "deployments": {
+                "greeting": {"id": "d1", "revision": 3, "model_id": "m1",
+                             "params": {"temperature": 0.4}, "provider_options": {},
+                             "prompt_pins": {"default": "v1", "ko": "v2"}}
+            },
+            "prompt_versions": {
+                "v1": {"id": "v1", "number": 2, "engine": "liquid",
+                       "messages": [{"role": "user", "content": "hi {{ name }}"}],
+                       "text_template": null}
+            },
+            "models": {
+                "m1": {"id": "m1", "provider": "openrouter", "model_id": "openai/gpt-4o-mini",
+                       "provider_options": {"only": ["OpenAI"]}, "capabilities": ["tools"],
+                       "status": "active"}
+            }
+        })
+    }
+
+    #[test]
+    fn decodes_a_v3_document() {
+        let (doc, warnings) = SnapshotDocument::from_value(&document()).unwrap();
+        assert!(warnings.is_empty());
+        assert_eq!(doc.environment.as_deref(), Some("production"));
+        assert_eq!(doc.use_cases["greeting"].kind, Kind::Chat);
+        assert_eq!(doc.prompt_names("greeting"), vec!["default", "ko"]);
+        assert_eq!(
+            doc.use_cases["greeting"]
+                .payload_policy
+                .as_ref()
+                .unwrap()
+                .mode,
+            PayloadMode::Hash
+        );
+        assert_eq!(
+            doc.models["m1"].model_id.as_deref(),
+            Some("openai/gpt-4o-mini")
+        );
+    }
+
+    #[test]
+    fn refuses_older_schema_versions() {
+        let mut value = document();
+        value["schema_version"] = json!(2);
+        assert_eq!(
+            SnapshotDocument::from_value(&value),
+            Err(DecodeError::UnsupportedSchemaVersion(2))
+        );
+    }
+
+    #[test]
+    fn warns_about_newer_schema_versions() {
+        let mut value = document();
+        value["schema_version"] = json!(4);
+        let (doc, warnings) = SnapshotDocument::from_value(&value).unwrap();
+        assert_eq!(doc.schema_version, 4);
+        assert_eq!(warnings.len(), 1);
+    }
+}

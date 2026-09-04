@@ -1,0 +1,27 @@
+[package]
+name = "prompton-sdk"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.85"
+description = "Official PromptOn SDK for Rust: fetch the pinned prompt/model configuration, render prompts locally, call the provider yourself, and send monitoring logs."
+license = "Apache-2.0"
+repository = "https://github.com/polimo-dev/prompton-rust"
+homepage = "https://prompton.ai"
+documentation = "https://docs.rs/prompton-sdk"
+readme = "README.md"
+keywords = ["llm", "prompt", "prompton", "observability", "ai"]
+categories = ["api-bindings", "development-tools"]
+exclude = ["tests/conformance/*", ".github/*"]
+
+[lib]
+name = "prompton"
+path = "src/lib.rs"
+
+[dependencies]
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+thiserror = "2.0"
+ureq = "3.4"
+
+[profile.release]
+strip = true
