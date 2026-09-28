@@ -15,9 +15,9 @@ use serde_json::Value;
 /// The two verbs the runtime API uses.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Method {
-    /// `GET /use-cases`.
+    /// `GET /prompts`.
     Get,
-    /// `POST /use-cases/{key}/prompt`, `POST /logs`.
+    /// `POST /prompts/{key}/render`, `POST /logs`.
     Post,
 }
 

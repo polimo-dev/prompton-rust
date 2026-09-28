@@ -144,7 +144,7 @@ fn against_the_running_fixture_server() {
         }) => {
             assert_eq!(status, 404);
             assert_eq!(details["reason"], "unknown_prompt");
-            assert_eq!(details["prompt_names"], json!(["default", "ko"]));
+            assert_eq!(details["template_names"], json!(["default", "ko"]));
         }
         other => panic!("expected a 404 for an unpinned prompt, got {other:?}"),
     }

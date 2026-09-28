@@ -44,7 +44,7 @@
             "max_tokens": 512,
             "temperature": 0.2
           },
-          "prompt": "default",
+          "prompt_key": "greeting",
           "prompt_version_id": "0198f2a1-0000-7000-8000-00000000a001",
           "provider": "openrouter",
           "sdk": {
@@ -56,11 +56,12 @@
           "started_at": "2026-09-04T09:00:00.000000Z",
           "status": "ok",
           "stop_kind": "stop",
+          "template": "default",
           "trace_id": "oban:8842",
           "upstream_provider": "OpenAI",
           "usage": {
             "cost_source": "provider",
-            "cost_usd": 1.12e-4,
+            "cost_usd": 0.000112,
             "input_tokens": 38,
             "output_tokens": 9,
             "raw": {
@@ -68,8 +69,7 @@
               "prompt_tokens": 38,
               "total_tokens": 47
             }
-          },
-          "use_case": "greeting"
+          }
         },
         {
           "context": {},
@@ -104,7 +104,7 @@
             "max_tokens": 512,
             "temperature": 0.2
           },
-          "prompt": "default",
+          "prompt_key": "greeting",
           "prompt_version_id": "0198f2a1-0000-7000-8000-00000000a001",
           "provider": "openrouter",
           "sdk": {
@@ -115,6 +115,7 @@
           "source": "remote",
           "started_at": "2026-09-04T09:00:00.000000Z",
           "status": "error",
+          "template": "default",
           "trace_id": "oban:8843",
           "usage": {
             "cost_source": "unknown",
@@ -122,8 +123,7 @@
             "input_tokens": null,
             "output_tokens": null,
             "raw": null
-          },
-          "use_case": "greeting"
+          }
         },
         {
           "context": {},
@@ -161,7 +161,7 @@
             "max_tokens": 512,
             "temperature": 0.2
           },
-          "prompt": "default",
+          "prompt_key": "greeting",
           "prompt_version_id": "0198f2a1-0000-7000-8000-00000000a001",
           "provider": "openrouter",
           "sdk": {
@@ -172,15 +172,15 @@
           "started_at": "2026-09-04T09:00:00.000000Z",
           "status": "error",
           "stop_kind": "length",
+          "template": "default",
           "trace_id": "oban:8844",
           "usage": {
             "cost_source": "provider",
-            "cost_usd": 2.08e-4,
+            "cost_usd": 0.000208,
             "input_tokens": 38,
             "output_tokens": 512,
             "raw": null
-          },
-          "use_case": "greeting"
+          }
         },
         {
           "context": {},
@@ -201,6 +201,7 @@
           "params": {
             "dimensions": 256
           },
+          "prompt_key": "embed",
           "provider": "openrouter",
           "sdk": {
             "name": "prompton_sdk",
@@ -212,12 +213,11 @@
           "trace_id": "ingest:2026-09-04:batch-7",
           "usage": {
             "cost_source": "catalog",
-            "cost_usd": 1.2e-6,
+            "cost_usd": 1.2e-06,
             "input_tokens": 14,
             "output_tokens": 0,
             "raw": null
-          },
-          "use_case": "embed"
+          }
         },
         {
           "deployment_id": "0198f2a1-0000-7000-8000-00000000d002",
@@ -234,7 +234,7 @@
           "output": {
             "content": "Alpha and beta, summarised."
           },
-          "prompt": "default",
+          "prompt_key": "summarize",
           "prompt_version_id": "0198f2a1-0000-7000-8000-00000000a003",
           "provider": "openrouter",
           "sdk": {
@@ -245,12 +245,12 @@
           "started_at": "2026-09-04T09:00:00.000000Z",
           "status": "ok",
           "stop_kind": "stop",
+          "template": "default",
           "usage": {
             "cost_source": "unknown",
             "input_tokens": 22,
             "output_tokens": 7
-          },
-          "use_case": "summarize"
+          }
         }
       ]
     },
@@ -293,10 +293,11 @@
     "kind": "chat | text | embedding (defaults to chat)",
     "model": "the provider model string that was actually requested",
     "null_keys": "the SDK omits a TOP-LEVEL key whose value is null; nested nulls inside usage are sent as null and accepted",
+    "prompt_key": "the use case key, at most 512 bytes",
     "provider": "openrouter | groq | openai | anthropic | google | other (unknown becomes other)",
     "required": [
       "id",
-      "use_case",
+      "prompt_key",
       "model",
       "status",
       "started_at"
@@ -306,8 +307,7 @@
     "started_at": "ISO8601 with an offset. Rejected when more than 5 minutes in the future or more than 7 days in the past - regenerate this field before replaying these fixtures against a live server",
     "status": "ok | error",
     "stop_kind": "stop | length | tool_call | content_filter | other; derived from finish_reason when absent",
-    "usage.cost_source": "provider | catalog | unknown",
-    "use_case": "the use case key, at most 512 bytes"
+    "usage.cost_source": "provider | catalog | unknown"
   },
   "format_version": 1,
   "generated_from": {
@@ -363,7 +363,7 @@
           "max_tokens": 512,
           "temperature": 0.2
         },
-        "prompt": "default",
+        "prompt_key": "greeting",
         "prompt_version_id": "0198f2a1-0000-7000-8000-00000000a001",
         "provider": "openrouter",
         "sdk": {
@@ -375,11 +375,12 @@
         "started_at": "2026-09-04T09:00:00.000000Z",
         "status": "ok",
         "stop_kind": "stop",
+        "template": "default",
         "trace_id": "oban:8842",
         "upstream_provider": "OpenAI",
         "usage": {
           "cost_source": "provider",
-          "cost_usd": 1.12e-4,
+          "cost_usd": 0.000112,
           "input_tokens": 38,
           "output_tokens": 9,
           "raw": {
@@ -387,8 +388,7 @@
             "prompt_tokens": 38,
             "total_tokens": 47
           }
-        },
-        "use_case": "greeting"
+        }
       }
     },
     {
@@ -428,7 +428,7 @@
           "max_tokens": 512,
           "temperature": 0.2
         },
-        "prompt": "default",
+        "prompt_key": "greeting",
         "prompt_version_id": "0198f2a1-0000-7000-8000-00000000a001",
         "provider": "openrouter",
         "sdk": {
@@ -439,6 +439,7 @@
         "source": "remote",
         "started_at": "2026-09-04T09:00:00.000000Z",
         "status": "error",
+        "template": "default",
         "trace_id": "oban:8843",
         "usage": {
           "cost_source": "unknown",
@@ -446,8 +447,7 @@
           "input_tokens": null,
           "output_tokens": null,
           "raw": null
-        },
-        "use_case": "greeting"
+        }
       }
     },
     {
@@ -490,7 +490,7 @@
           "max_tokens": 512,
           "temperature": 0.2
         },
-        "prompt": "default",
+        "prompt_key": "greeting",
         "prompt_version_id": "0198f2a1-0000-7000-8000-00000000a001",
         "provider": "openrouter",
         "sdk": {
@@ -501,15 +501,15 @@
         "started_at": "2026-09-04T09:00:00.000000Z",
         "status": "error",
         "stop_kind": "length",
+        "template": "default",
         "trace_id": "oban:8844",
         "usage": {
           "cost_source": "provider",
-          "cost_usd": 2.08e-4,
+          "cost_usd": 0.000208,
           "input_tokens": 38,
           "output_tokens": 512,
           "raw": null
-        },
-        "use_case": "greeting"
+        }
       }
     },
     {
@@ -535,6 +535,7 @@
         "params": {
           "dimensions": 256
         },
+        "prompt_key": "embed",
         "provider": "openrouter",
         "sdk": {
           "name": "prompton_sdk",
@@ -546,12 +547,11 @@
         "trace_id": "ingest:2026-09-04:batch-7",
         "usage": {
           "cost_source": "catalog",
-          "cost_usd": 1.2e-6,
+          "cost_usd": 1.2e-06,
           "input_tokens": 14,
           "output_tokens": 0,
           "raw": null
-        },
-        "use_case": "embed"
+        }
       }
     },
     {
@@ -573,7 +573,7 @@
         "output": {
           "content": "Alpha and beta, summarised."
         },
-        "prompt": "default",
+        "prompt_key": "summarize",
         "prompt_version_id": "0198f2a1-0000-7000-8000-00000000a003",
         "provider": "openrouter",
         "sdk": {
@@ -584,12 +584,12 @@
         "started_at": "2026-09-04T09:00:00.000000Z",
         "status": "ok",
         "stop_kind": "stop",
+        "template": "default",
         "usage": {
           "cost_source": "unknown",
           "input_tokens": 22,
           "output_tokens": 7
-        },
-        "use_case": "summarize"
+        }
       }
     }
   ]

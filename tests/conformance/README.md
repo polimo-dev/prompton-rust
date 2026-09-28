@@ -53,9 +53,9 @@ the prompt version is committed, so a template that fails lint can never reach a
 ### use_case.json
 
 `documents` is a map of reference name → a complete schema-v4 use-case document, exactly as
-`GET /api/v1/use-cases?environment=…` returns it. For each case, decode
+`GET /api/v1/prompts?environment=…` returns it. For each case, decode
 `documents[document_ref]`, read `use_case` with the optional `prompt` name, and — when
-`variables` is present — render the resulting prompt. This is precisely what `POST /api/v1/use-cases/{key}/prompt`
+`variables` is present — render the resulting prompt. This is precisely what `POST /api/v1/prompts/{key}/render`
 does on the server.
 
 ### truncation.json

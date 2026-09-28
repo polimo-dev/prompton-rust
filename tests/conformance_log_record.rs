@@ -139,15 +139,15 @@ fn the_field_rules_hold() {
         .collect();
     assert_eq!(
         required,
-        vec!["id", "use_case", "model", "status", "started_at"]
+        vec!["id", "prompt_key", "model", "status", "started_at"]
     );
 
     let mut record = LogRecord::new("greeting", "openai/gpt-4o-mini", prompton::Status::Ok);
     assert!(record.validate().is_ok());
-    for blank in ["use_case", "model", "started_at"] {
+    for blank in ["prompt_key", "model", "started_at"] {
         let mut broken = record.clone();
         match blank {
-            "use_case" => broken.use_case = String::new(),
+            "prompt_key" => broken.use_case = String::new(),
             "model" => broken.model = String::new(),
             _ => broken.started_at = String::new(),
         }

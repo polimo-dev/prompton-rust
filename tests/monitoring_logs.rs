@@ -77,7 +77,7 @@ fn a_batch_is_sent_on_the_size_trigger_with_the_environment_parameter() {
         let id = entry["id"].as_str().unwrap();
         assert!(prompton::uuidv7::is_uuid_v7(id), "{id} must be a UUIDv7");
         assert_eq!(entry["sdk"]["name"], prompton::SDK_NAME);
-        assert_eq!(entry["use_case"], "greeting");
+        assert_eq!(entry["prompt_key"], "greeting");
     }
 }
 
@@ -426,7 +426,7 @@ fn test_mode_makes_no_http_calls_and_captures_records() {
     );
     let logged = client.captured_logs();
     assert_eq!(logged.len(), 1);
-    assert_eq!(logged[0]["use_case"], "greeting");
+    assert_eq!(logged[0]["prompt_key"], "greeting");
     client.clear_captured_logs();
     assert!(client.captured_logs().is_empty());
 }
@@ -710,7 +710,10 @@ fn a_batch_that_never_gets_through_is_dropped_after_its_attempts() {
 #[test]
 fn log_events_posts_events_envelope_and_fills_stable_fields() {
     let server = StubServer::start(|_, _| {
-        StubResponse::json(202, r#"{"accepted":1,"duplicates":0,"rejected":[]}"#)
+        StubResponse::json(
+            202,
+            r#"{"accepted":0,"duplicates":0,"rejected":[],"events":{"accepted":1,"duplicates":0,"rejected":[]}}"#,
+        )
     });
     let client = quiet_builder(&server).build().unwrap();
     let mut event = TraceEvent::new();
@@ -744,7 +747,10 @@ fn log_events_posts_events_envelope_and_fills_stable_fields() {
 #[test]
 fn log_events_validates_required_fields() {
     let server = StubServer::start(|_, _| {
-        StubResponse::json(202, r#"{"accepted":1,"duplicates":0,"rejected":[]}"#)
+        StubResponse::json(
+            202,
+            r#"{"accepted":0,"duplicates":0,"rejected":[],"events":{"accepted":1,"duplicates":0,"rejected":[]}}"#,
+        )
     });
     let client = quiet_builder(&server).build().unwrap();
     let mut missing_trace = vec![TraceEvent::from_iter([

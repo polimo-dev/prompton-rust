@@ -111,7 +111,7 @@ impl Api {
         let response = self.send(HttpRequest {
             method: Method::Get,
             url: format!(
-                "{}/use-cases?environment={}",
+                "{}/prompts?environment={}",
                 self.base_url,
                 encode(environment)
             ),
@@ -140,7 +140,7 @@ impl Api {
     pub fn prompt(&self, use_case: &str, body: &Value) -> Result<Value, RemoteFailure> {
         let response = self.send(HttpRequest {
             method: Method::Post,
-            url: format!("{}/use-cases/{}/prompt", self.base_url, encode(use_case)),
+            url: format!("{}/prompts/{}/render", self.base_url, encode(use_case)),
             headers: self.headers(true),
             body: Some(serde_json::to_vec(body).unwrap_or_default()),
             timeout: self.timeout,
@@ -174,7 +174,7 @@ impl Api {
         if (200..300).contains(&response.status) {
             Ok(response
                 .json()
-                .and_then(|value| serde_json::from_value(value).ok())
+                .and_then(logs_ack_from_value)
                 .unwrap_or_default())
         } else {
             Err(self.failure(response))
@@ -198,7 +198,7 @@ impl Api {
         if (200..300).contains(&response.status) {
             Ok(response
                 .json()
-                .and_then(|value| serde_json::from_value(value).ok())
+                .and_then(events_ack_from_value)
                 .unwrap_or_default())
         } else {
             Err(self.failure(response))
@@ -265,6 +265,18 @@ impl Api {
             },
         }
     }
+}
+
+fn logs_ack_from_value(value: Value) -> Option<LogsAck> {
+    serde_json::from_value(value).ok()
+}
+
+fn events_ack_from_value(value: Value) -> Option<LogsAck> {
+    value
+        .get("events")
+        .cloned()
+        .or_else(|| Some(value))
+        .and_then(logs_ack_from_value)
 }
 
 /// Percent-encodes a query-string value.

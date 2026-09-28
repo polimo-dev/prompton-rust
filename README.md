@@ -6,7 +6,7 @@ version, one model, and its parameters. Your app fetches that configuration and 
 provider **itself**, with your own key and your own HTTP client.
 
 PromptOn is config-fetch, **not a proxy**. It is never in the request path, it never sees your
-provider key, and if it is down your app keeps running on the last use-case document it received. After each
+provider key, and if it is down your app keeps running on the last prompt document it received. After each
 call your app sends back a **monitoring log**, and those logs are how you see cost, latency, error
 rate and stop reasons per use case.
 
@@ -47,7 +47,7 @@ Get a runtime key with the [PromptOn CLI](https://github.com/polimo-dev/prompton
 hosted app, `export PTN_HOST=https://prompton.example`.
 
 `cargo run --example quickstart` runs the whole flow — with a real server if `PTN_API_KEY` is set,
-and on an inline use-case document if it is not.
+and on an inline prompt document if it is not.
 
 ### Using it from an async runtime
 
@@ -67,11 +67,11 @@ Every option follows **explicit option > environment variable > default**.
 | `.base_url(url)` | `PTN_BASE_URL` | — | The full API base, when a gateway does not sit at the root |
 | `.api_key(key)` | `PTN_API_KEY` | none | `ptn_<project_slug>_…`. Without it the SDK makes **no** remote calls and serves the disk cache and bundle only, saying so once |
 | `.environment(name)` | `PTN_ENVIRONMENT` | `production` | Which environment this process reads |
-| `.project(slug)` | `PTN_PROJECT` | from the key | Names the default disk-cache file and guards against another project's use-case document |
-| `.cache_ttl(duration)` | — | 10 s | How long a use-case document is served from memory before a refresh; also the base of the failure backoff |
+| `.project(slug)` | `PTN_PROJECT` | from the key | Names the default disk-cache file and guards against another project's prompt document |
+| `.cache_ttl(duration)` | — | 10 s | How long a prompt document is served from memory before a refresh; also the base of the failure backoff |
 | `.request_timeout(duration)` | — | 5 s | Per-request timeout |
 | `.disk_cache_path(path)` / `.without_disk_cache()` | — | OS cache dir | `<cache>/prompton/<project>.<environment>.use-cases.json`, written atomically with a `.meta.json` sidecar |
-| `.bundle(path)` | — | none | A use-case document shipped inside the app, used when memory and disk are empty |
+| `.bundle(path)` | — | none | A prompt document shipped inside the app, used when memory and disk are empty |
 | `.mode(Mode::Live \| Offline \| Test)` | — | `Live` | `Offline` never touches the network; `Test` also captures records in memory |
 | `.poll(bool)` | — | `true` | The background poller. With it off, a refresh is triggered by the next `use_case` call after the TTL |
 | `.fetch_on_start(bool)` | — | `true` | A cold start with nothing cached fetches once, synchronously, before `build()` returns |
@@ -87,7 +87,7 @@ Every option follows **explicit option > environment variable > default**.
 The single most important behaviour of this SDK: **a model call never fails because PromptOn did.**
 Configuration goes stale in the worst case, never absent.
 
-- **Poll, do not fetch per request.** `GET /use-cases` with `If-None-Match` every 10 seconds by
+- **Poll, do not fetch per request.** `GET /prompts` with `If-None-Match` every 10 seconds by
   default. A `304` costs nothing, so a short interval is cheap. Every `use_case` inside the TTL is
   answered from memory with no HTTP call at all.
 - **Refresh in the background.** A refresh never blocks a model call, and while one is in flight —
@@ -99,28 +99,28 @@ Configuration goes stale in the worst case, never absent.
 - **Three tiers, in order: memory → disk → bundle → remote.** The disk cache is written atomically
   (temp file, then rename) with a sidecar holding the ETag and `Last-Modified`; several processes
   on one host may share it, a reader tolerates a concurrent rename, and a corrupt or partial file is
-  ignored rather than fatal. The bundle is a use-case document committed into the repository
+  ignored rather than fatal. The bundle is a prompt document committed into the repository
   (`client.export_use_cases("use-cases.production.json")`, refreshed by your build) — in a serverless
   or scale-to-zero runtime it is the primary cold-start fallback, not a nicety.
 - **No external services, ever.** No database, no Redis, no shared store: memory, one local file and
   the bundled file are the only tiers. Instances never coordinate; each keeps its own copy, which
   ETag polling makes cheap.
-- **The environment and project guards.** A use-case document for another environment or another project is
+- **The environment and project guards.** A prompt document for another environment or another project is
   never used, wherever it came from — a `staging` process must not boot on a `production` bundle.
 - **Monitoring logs never block a model call.** They are batched, retried, bounded, and dropped with
   a counter rather than allowed to grow without limit.
 
 **Prove it before you ship**: run your app with `PTN_HOST` pointed somewhere unreachable and confirm
-that logs still happen on the cached use-case document.
+that logs still happen on the cached prompt document.
 
 ## How it fails
 
 | when | what you see |
 |---|---|
-| a poll times out, or answers `5xx` or `429` | nothing: the previous use-case document keeps serving, and the SDK says so on its log sink |
+| a poll times out, or answers `5xx` or `429` | nothing: the previous prompt document keeps serving, and the SDK says so on its log sink |
 | PromptOn is down at start | the disk cache, then the bundle, answer `use_case`; `source` records which |
 | nothing is cached anywhere | `Error::NotReady` — the only error worth retrying |
-| the use case is not in the use-case document | `Error::UnknownUseCase` |
+| the use case is not in the prompt document | `Error::UnknownUseCase` |
 | the use case has no live deployment here | `Error::Unresolved` — a bug in the deployment, **never** a reason to fall back to a hard-coded prompt |
 | the prompt name is not pinned | `Error::UnknownPrompt { prompt_names, … }` — there is no silent fallback to `default` |
 | a variable the template needs is missing | `Error::Template(TemplateError::MissingVariable(name))`, with `error.missing_variable()` |
@@ -205,7 +205,7 @@ Missing `event_id`, `observed_at`, and `sdk` are filled before sending and remai
 
 ### The payload policy
 
-Before a record is queued the SDK applies the use case's `payload_policy` from the use-case document, so raw
+Before a record is queued the SDK applies the use case's `payload_policy` from the prompt document, so raw
 text never travels when the policy says it should not: the keep decision (sampling on a hash of the
 id; errors and `stop_kind: length` are always kept), then `none` (drop `input`/`output`), `hash`
 (replace them with `{sha256, bytes}`) or `full` (truncate to the contract's limits, UTF-8 safe),
@@ -227,7 +227,7 @@ assert_eq!(logged[0]["input"]["variables"]["name"], "Ada");
 ```
 
 `Mode::Test` makes no HTTP calls and captures every record for assertions; `Mode::Offline` also
-makes no HTTP calls but reads use-case documents from the disk cache and the bundle, which is what
+makes no HTTP calls but reads prompt documents from the disk cache and the bundle, which is what
 you want in CI.
 
 ## Conformance

@@ -168,13 +168,14 @@ impl Default for Sdk {
 
 /// One monitoring log: what your app did, for one model call.
 ///
-/// Only `id`, `use_case`, `model`, `status` and `started_at` are required; `id` is filled with a
+/// Only `id`, `prompt_key`, `model`, `status` and `started_at` are required; `id` is filled with a
 /// fresh UUIDv7 when you leave it empty.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct LogRecord {
     /// The idempotency key: a UUIDv7 the app generates before the provider call.
     pub id: String,
     /// The use case key.
+    #[serde(rename = "prompt_key", alias = "use_case")]
     pub use_case: String,
     /// The provider-side model string that was requested.
     pub model: String,
@@ -192,8 +193,13 @@ pub struct LogRecord {
     /// That revision's number.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub deployment_revision: Option<i64>,
-    /// The prompt name that was used.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    /// The prompt template name that was used.
+    #[serde(
+        default,
+        rename = "template",
+        alias = "prompt",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub prompt: Option<String>,
     /// The pinned prompt version.
     #[serde(default, skip_serializing_if = "Option::is_none")]

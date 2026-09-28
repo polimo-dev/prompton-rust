@@ -521,3 +521,30 @@ fn without_the_poller_a_stale_use_case_lookup_refreshes_in_the_background() {
     );
     assert_eq!(rendered(&client), "Hi Ada!");
 }
+
+#[test]
+fn fetch_uses_current_prompts_endpoint_and_prompt_document_shape() {
+    let fixture = support::conformance("prompt.json");
+    let production = fixture["documents"]["production"].clone();
+    let server = StubServer::start(move |request, _| {
+        assert!(
+            request.path.starts_with("/api/v1/prompts?"),
+            "{}",
+            request.path
+        );
+        StubResponse::json(200, production.to_string()).with_header("etag", ETAG)
+    });
+    let client = Client::builder()
+        .base_url(server.base_url())
+        .api_key("ptn_sdkfixture_secret")
+        .environment("production")
+        .cache_ttl(Duration::from_secs(60))
+        .request_timeout(Duration::from_secs(2))
+        .without_disk_cache()
+        .log_sink(|_| {})
+        .build()
+        .expect("client");
+    let resolution = client.use_case("greeting").expect("use_case");
+    assert_eq!(resolution.model.as_deref(), Some("openai/gpt-4o-mini"));
+    assert!(!resolution.prompt_names.is_empty());
+}

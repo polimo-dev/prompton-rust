@@ -1,4 +1,4 @@
-//! The use-case document: what `GET /api/v1/use-cases?environment=…` returns, decoded.
+//! The use-case document: what `GET /api/v1/prompts?environment=…` returns, decoded.
 //!
 //! One request returns everything live in one environment — every deployment, the prompt versions
 //! and models they pin, and the use case metadata — and the SDK reads it locally. The

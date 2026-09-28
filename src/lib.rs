@@ -390,7 +390,7 @@ impl Client {
             "environment": environment,
         });
         if let Some(prompt) = &request.prompt {
-            body["prompt"] = Value::String(prompt.clone());
+            body["template"] = Value::String(prompt.clone());
         }
         if let Some(variables) = &request.variables {
             body["variables"] = variables.to_value();
@@ -859,7 +859,7 @@ impl RemotePromptRequest {
     }
 }
 
-/// What `POST /use-cases/{key}/prompt` answered.
+/// What `POST /prompts/{key}/render` answered.
 #[derive(Debug, Clone, PartialEq)]
 pub struct RemotePrompt {
     /// The use case key.
@@ -941,9 +941,10 @@ impl RemotePrompt {
                 .get("deployment")
                 .and_then(|deployment| deployment.get("revision"))
                 .and_then(Value::as_i64),
-            prompt: string("prompt"),
+            prompt: string("template").or_else(|| string("prompt")),
             prompt_names: object
-                .get("prompt_names")
+                .get("template_names")
+                .or_else(|| object.get("prompt_names"))
                 .and_then(Value::as_array)
                 .map(|names| {
                     names

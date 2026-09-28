@@ -14,8 +14,8 @@ fn prompt_body(prompt: &str, content: &str) -> String {
         "key": "greeting",
         "kind": "chat",
         "deployment": {"id": "0198f2a1-0000-7000-8000-00000000d001", "revision": 3},
-        "prompt": prompt,
-        "prompt_names": ["default", "ko"],
+        "template": prompt,
+        "template_names": ["default", "ko"],
         "model_id": "0198f2a1-0000-7000-8000-00000000e001",
         "model": "openai/gpt-4o-mini",
         "provider": "openrouter",
@@ -48,7 +48,7 @@ fn client_for(server: &StubServer, ttl: Duration) -> Client {
 fn a_variable_less_answer_is_cached_and_rendered_locally() {
     let server = StubServer::start(|request, _| {
         assert!(
-            request.path.ends_with("/use-cases/greeting/prompt"),
+            request.path.ends_with("/prompts/greeting/render"),
             "{}",
             request.path
         );
@@ -101,7 +101,7 @@ fn a_call_with_variables_is_never_cached() {
 #[test]
 fn the_prompt_name_is_part_of_the_cache_key() {
     let server = StubServer::start(|request, _| {
-        let prompt = request.json()["prompt"]
+        let prompt = request.json()["template"]
             .as_str()
             .unwrap_or("default")
             .to_string();
@@ -163,7 +163,7 @@ fn a_404_is_reported_with_its_details() {
     let server = StubServer::start(|_, _| {
         StubResponse::json(
             404,
-            r#"{"error":{"code":"not_found","message":"no prompt named \"fr\"","details":{"reason":"unknown_prompt","prompt":"fr","prompt_names":["default","ko"]}}}"#,
+            r#"{"error":{"code":"not_found","message":"no prompt named \"fr\"","details":{"reason":"unknown_template","template":"fr","template_names":["default","ko"]}}}"#,
         )
     });
     let client = client_for(&server, Duration::from_secs(60));
@@ -177,8 +177,8 @@ fn a_404_is_reported_with_its_details() {
         }) => {
             assert_eq!(status, 404);
             assert_eq!(code.as_deref(), Some("not_found"));
-            assert_eq!(details["reason"], "unknown_prompt");
-            assert_eq!(details["prompt_names"], json!(["default", "ko"]));
+            assert_eq!(details["reason"], "unknown_template");
+            assert_eq!(details["template_names"], json!(["default", "ko"]));
         }
         other => panic!("expected a 404, got {other:?}"),
     }
