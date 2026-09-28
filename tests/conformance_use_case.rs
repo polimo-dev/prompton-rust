@@ -1,4 +1,4 @@
-//! The cross-language resolution contract: every case in `conformance/use_case.json`.
+//! The cross-language resolution contract: every case in `conformance/prompt.json`.
 
 mod support;
 
@@ -7,7 +7,7 @@ use serde_json::{json, Value};
 
 #[test]
 fn every_use_case_case() {
-    let data = support::conformance("use_case.json");
+    let data = support::conformance("prompt.json");
     let documents = data["documents"].as_object().expect("documents");
     let cases = data["cases"].as_array().expect("cases");
     assert!(
@@ -30,9 +30,15 @@ fn every_use_case_case() {
             .set_use_cases_as(&documents[reference], Source::Remote)
             .unwrap();
 
-        let use_case = case["use_case"].as_str().expect("use_case");
+        let use_case = case["use_case"]
+            .as_str()
+            .or_else(|| case["prompt_key"].as_str())
+            .expect("prompt_key");
         let options = UseCaseOptions {
-            prompt: case["prompt"].as_str().map(str::to_string),
+            prompt: case["prompt"]
+                .as_str()
+                .or_else(|| case["template"].as_str())
+                .map(str::to_string),
         };
         let expect = &case["expect"];
 
@@ -81,12 +87,18 @@ fn every_use_case_case() {
         );
         assert_eq!(
             resolved.prompt.as_deref(),
-            expect["prompt"].as_str(),
+            expect["prompt"]
+                .as_str()
+                .or_else(|| expect["template"].as_str()),
             "{name}: prompt"
         );
         assert_eq!(
-            json!(resolved.prompt_names),
-            expect["prompt_names"],
+            &json!(resolved.prompt_names),
+            if expect.get("prompt_names").is_some() {
+                &expect["prompt_names"]
+            } else {
+                &expect["template_names"]
+            },
             "{name}: prompt_names"
         );
         assert_eq!(
@@ -172,12 +184,12 @@ fn assert_error(name: &str, error: &Error, expect: &Value) {
         .as_str()
         .unwrap_or_else(|| panic!("{name}: unexpected error {error}"));
     match (expected, error) {
-        ("unknown_use_case", Error::UnknownUseCase(key)) => {
+        ("unknown_use_case" | "unknown_prompt", Error::UnknownUseCase(key)) => {
             assert_eq!(Some(key.as_str()), expect["key"].as_str(), "{name}: key");
         }
         ("unresolved", Error::Unresolved(_)) => {}
         (
-            "unknown_prompt",
+            "unknown_prompt" | "unknown_template",
             Error::UnknownPrompt {
                 use_case,
                 prompt,
@@ -189,8 +201,22 @@ fn assert_error(name: &str, error: &Error, expect: &Value) {
                 expect["key"].as_str(),
                 "{name}: key"
             );
-            assert_eq!(Some(prompt.as_str()), expect["prompt"].as_str(), "{name}");
-            assert_eq!(json!(prompt_names), expect["prompt_names"], "{name}");
+            assert_eq!(
+                Some(prompt.as_str()),
+                expect["prompt"]
+                    .as_str()
+                    .or_else(|| expect["template"].as_str()),
+                "{name}"
+            );
+            assert_eq!(
+                &json!(prompt_names),
+                if expect.get("prompt_names").is_some() {
+                    &expect["prompt_names"]
+                } else {
+                    &expect["template_names"]
+                },
+                "{name}"
+            );
         }
         ("missing_variable", error) => {
             assert_eq!(

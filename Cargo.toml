@@ -1,6 +1,6 @@
 [package]
 name = "prompton-sdk"
-version = "0.2.0"
+version = "0.4.0"
 edition = "2021"
 rust-version = "1.85"
 description = "Official PromptOn SDK for Rust: fetch the pinned prompt/model configuration, render prompts locally, call the provider yourself, and send monitoring logs."

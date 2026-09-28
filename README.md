@@ -25,7 +25,7 @@ The crate is not on crates.io yet, so depend on the repository:
 prompton-sdk = { git = "https://github.com/polimo-dev/prompton-rust", branch = "main" }
 ```
 
-Once it is published, the line becomes `prompton-sdk = "0.2"`. The crate is `prompton-sdk`; the
+Once it is published, the line becomes `prompton-sdk = "0.4"`. The crate is `prompton-sdk`; the
 library you import is `prompton`. Rust 1.85 or newer.
 
 ## Quick start
@@ -180,6 +180,28 @@ keys, no `PTN_API_KEY`, no user PII beyond `end_user_ref`.
 
 Failures matter as much as successes: error rates and truncation rates are meaningless without
 them, so send `status: "error"` records too.
+
+
+### Trace events
+
+For tool-call traces, submit the events your app actually observed. The SDK does not call customer tools; it only sends your `tool_attempt` and `completion` events to PromptOn.
+
+```rust
+use prompton::{TraceEvent, EVENT_KIND_TOOL_ATTEMPT, EVENT_STATUS_OK};
+
+let mut event = TraceEvent::new();
+event.insert("trace_id".into(), serde_json::json!("run-123"));
+event.insert("event_kind".into(), serde_json::json!(EVENT_KIND_TOOL_ATTEMPT));
+event.insert("status".into(), serde_json::json!(EVENT_STATUS_OK));
+event.insert("tool_call_id".into(), serde_json::json!("call_1"));
+event.insert("tool_name".into(), serde_json::json!("search"));
+event.insert("arguments".into(), serde_json::json!({"q": "diary"}));
+event.insert("result".into(), serde_json::json!({"content": ["found"]}));
+
+prompton.log_events(&mut [event], None)?;
+```
+
+Missing `event_id`, `observed_at`, and `sdk` are filled before sending and remain in the supplied maps, so retrying the same events reuses the same event ids.
 
 ### The payload policy
 

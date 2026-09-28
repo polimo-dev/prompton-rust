@@ -103,6 +103,31 @@ use crate::store::Store;
 /// The SDK's version, as it appears in the `User-Agent` and in every record's `sdk` object.
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
+/// One monitored tool or completion event. Provider-native JSON fields are preserved.
+pub type TraceEvent = Map<String, Value>;
+
+/// Trace event kind for one customer-tool attempt.
+pub const EVENT_KIND_TOOL_ATTEMPT: &str = "tool_attempt";
+/// Trace event kind for a model completion step.
+pub const EVENT_KIND_COMPLETION: &str = "completion";
+
+/// Trace event status for an in-flight step.
+pub const EVENT_STATUS_STARTED: &str = "started";
+/// Trace event status for a completed successful step.
+pub const EVENT_STATUS_OK: &str = "ok";
+/// Trace event status for a failed step.
+pub const EVENT_STATUS_ERROR: &str = "error";
+/// Trace event status for a policy-denied step.
+pub const EVENT_STATUS_DENIED: &str = "denied";
+/// Trace event status for a cancelled step.
+pub const EVENT_STATUS_CANCELLED: &str = "cancelled";
+/// Trace event status for a timed-out step.
+pub const EVENT_STATUS_TIMEOUT: &str = "timeout";
+/// Trace event status for an expected step that was not observed.
+pub const EVENT_STATUS_MISSING: &str = "missing";
+/// Trace event status for a step that ended without complete evidence.
+pub const EVENT_STATUS_INCOMPLETE: &str = "incomplete";
+
 struct Inner {
     config: Arc<Config>,
     store: Arc<Store>,
@@ -451,6 +476,38 @@ impl Client {
         }
     }
 
+    /// Submits observed tool/completion trace events synchronously. The SDK never calls customer
+    /// tools; it only sends the events your app observed. Missing `event_id`, `observed_at` and
+    /// `sdk` are filled before the request, and generated ids are kept in the supplied
+    /// maps so caller retries reuse the same event ids.
+    pub fn log_events(
+        &self,
+        events: &mut [TraceEvent],
+        environment: Option<String>,
+    ) -> SdkResult<LogsAck> {
+        if events.is_empty() {
+            return Ok(LogsAck::default());
+        }
+        if events.len() > 500 {
+            return Err(Error::InvalidRecord(
+                "log_events accepts at most 500 events".to_string(),
+            ));
+        }
+        if !self.inner.config.remote_enabled() {
+            return Err(Error::RemoteDisabled(
+                "trace events require live mode and an API key".to_string(),
+            ));
+        }
+        for (index, event) in events.iter_mut().enumerate() {
+            fill_trace_event(index, event)?;
+        }
+        let env = environment.unwrap_or_else(|| self.inner.config.environment.clone());
+        self.inner
+            .api
+            .post_events(&env, events)
+            .map_err(|failure| failure.error)
+    }
+
     /// Sends everything queued and waits for the answers, including the batches the background
     /// thread is already sending.
     ///
@@ -590,6 +647,67 @@ fn panic_message(panic: &(dyn std::any::Any + Send)) -> String {
     } else {
         "the provider call panicked".to_string()
     }
+}
+
+fn fill_trace_event(index: usize, event: &mut TraceEvent) -> SdkResult<()> {
+    if event
+        .get("event_id")
+        .and_then(Value::as_str)
+        .unwrap_or("")
+        .is_empty()
+    {
+        event.insert("event_id".to_string(), Value::String(uuidv7::generate()));
+    }
+    if event
+        .get("observed_at")
+        .and_then(Value::as_str)
+        .unwrap_or("")
+        .is_empty()
+    {
+        event.insert(
+            "observed_at".to_string(),
+            Value::String(record::now_iso8601()),
+        );
+    }
+    if event
+        .get("trace_id")
+        .and_then(Value::as_str)
+        .unwrap_or("")
+        .is_empty()
+    {
+        return Err(Error::InvalidRecord(format!(
+            "trace event {index} needs trace_id"
+        )));
+    }
+    let kind = event
+        .get("event_kind")
+        .and_then(Value::as_str)
+        .unwrap_or("");
+    if !matches!(kind, EVENT_KIND_TOOL_ATTEMPT | EVENT_KIND_COMPLETION) {
+        return Err(Error::InvalidRecord(format!(
+            "trace event {index} has unsupported event_kind"
+        )));
+    }
+    let status = event.get("status").and_then(Value::as_str).unwrap_or("");
+    if !matches!(
+        status,
+        EVENT_STATUS_STARTED
+            | EVENT_STATUS_OK
+            | EVENT_STATUS_ERROR
+            | EVENT_STATUS_DENIED
+            | EVENT_STATUS_CANCELLED
+            | EVENT_STATUS_TIMEOUT
+            | EVENT_STATUS_MISSING
+            | EVENT_STATUS_INCOMPLETE
+    ) {
+        return Err(Error::InvalidRecord(format!(
+            "trace event {index} has unsupported status"
+        )));
+    }
+    event
+        .entry("sdk".to_string())
+        .or_insert_with(|| json!({"name": SDK_NAME, "version": VERSION}));
+    Ok(())
 }
 
 /// Options for reading a use case.
@@ -838,7 +956,10 @@ impl RemotePrompt {
             model: string("model"),
             model_id: string("model_id"),
             provider: string("provider"),
-            params: map("params"),
+            params: crate::resolver::merge_tools(
+                map("params"),
+                object.get("tools").and_then(Value::as_object),
+            )?,
             provider_options: map("provider_options"),
             prompt_version_id: object
                 .get("prompt_version")

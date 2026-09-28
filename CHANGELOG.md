@@ -4,6 +4,15 @@ All notable changes to `prompton-sdk` are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the crate follows
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## 0.4.0 — schema 7 tools and trace events
+
+### Added
+
+- Reads deployed documents with schema versions 4 through 7, including `prompts`/`template_pins` aliases from the prompt contract fixture.
+- Preserves native chat messages through slots, including `null` and array content, `tool_calls`, `tool_call_id`, and unknown provider fields.
+- Merges canonical prompt `tools` into provider params, strips PromptOn-only `output_schema` and `output_examples`, and rejects conflicting legacy params.
+- Adds `Client::log_events` for synchronous tool/completion trace events with stable generated `event_id`, `observed_at`, and `sdk`.
+
 ## 0.2.0 — vocabulary rename
 
 ### Changed

@@ -181,6 +181,30 @@ impl Api {
         }
     }
 
+    pub fn post_events(
+        &self,
+        environment: &str,
+        events: &[Map<String, Value>],
+    ) -> Result<LogsAck, RemoteFailure> {
+        let body = json!({ "logs": [], "events": events });
+        let response = self.send(HttpRequest {
+            method: Method::Post,
+            url: format!("{}/logs?environment={}", self.base_url, encode(environment)),
+            headers: self.headers(true),
+            body: Some(serde_json::to_vec(&body).unwrap_or_default()),
+            timeout: self.timeout,
+        })?;
+
+        if (200..300).contains(&response.status) {
+            Ok(response
+                .json()
+                .and_then(|value| serde_json::from_value(value).ok())
+                .unwrap_or_default())
+        } else {
+            Err(self.failure(response))
+        }
+    }
+
     fn headers(&self, json_body: bool) -> Vec<(String, String)> {
         let mut headers = vec![
             ("accept".to_string(), "application/json".to_string()),

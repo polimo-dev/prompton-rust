@@ -232,6 +232,10 @@ pub(crate) fn resolve(
         (Kind::Text, Some(version)) => version.text_template.clone(),
         _ => None,
     };
+    let params = merge_tools(
+        merge(&use_case.default_params, &deployment.params),
+        version.and_then(|version| version.tools.as_ref()),
+    )?;
 
     let empty = Map::new();
     Ok(Resolution {
@@ -244,7 +248,7 @@ pub(crate) fn resolve(
         model: model.and_then(|model| model.model_id.clone()),
         model_id: model.map(|model| model.id.clone()),
         provider: model.and_then(|model| model.provider.clone()),
-        params: merge(&use_case.default_params, &deployment.params),
+        params,
         provider_options: merge(
             model.map(|model| &model.provider_options).unwrap_or(&empty),
             &deployment.provider_options,
@@ -271,13 +275,109 @@ pub fn merge(left: &Map<String, Value>, right: &Map<String, Value>) -> Map<Strin
     merged
 }
 
+pub(crate) fn merge_tools(
+    mut params: Map<String, Value>,
+    tools: Option<&Map<String, Value>>,
+) -> Result<Map<String, Value>, Error> {
+    let Some(tools) = tools else {
+        return Ok(params);
+    };
+    let provider = provider_tool_params(tools)?;
+    for (key, value) in provider {
+        if let Some(existing) = params.get(&key) {
+            if existing != &value {
+                return Err(Error::Config(format!(
+                    "prompt tools conflict with params.{key}"
+                )));
+            }
+        }
+        params.insert(key, value);
+    }
+    Ok(params)
+}
+
+fn provider_tool_params(tools: &Map<String, Value>) -> Result<Map<String, Value>, Error> {
+    let mut out = Map::new();
+    if tools.is_empty() {
+        return Ok(out);
+    }
+    for key in tools.keys() {
+        match key.as_str() {
+            "definitions" | "tool_choice" | "parallel_tool_calls" => {}
+            _ => {
+                return Err(Error::Config(format!(
+                    "canonical tools contain unsupported field {key}"
+                )));
+            }
+        }
+    }
+    let definitions = tools
+        .get("definitions")
+        .and_then(Value::as_array)
+        .ok_or_else(|| Error::Config("canonical tools definitions must be an array".to_string()))?;
+    let stripped = definitions
+        .iter()
+        .map(strip_tool_metadata)
+        .collect::<Result<Vec<_>, _>>()?;
+    out.insert("tools".to_string(), Value::Array(stripped));
+    for key in ["tool_choice", "parallel_tool_calls"] {
+        if let Some(value) = tools.get(key) {
+            if key == "parallel_tool_calls" && !value.is_boolean() {
+                return Err(Error::Config(
+                    "canonical tools parallel_tool_calls must be a boolean".to_string(),
+                ));
+            }
+            out.insert(key.to_string(), value.clone());
+        }
+    }
+    Ok(out)
+}
+
+fn strip_tool_metadata(definition: &Value) -> Result<Value, Error> {
+    let Value::Object(map) = definition else {
+        return Err(Error::Config(
+            "canonical tool definitions must be objects".to_string(),
+        ));
+    };
+    if map.get("type") != Some(&Value::String("function".to_string())) {
+        return Err(Error::Config(
+            "canonical tool definitions must be function tools".to_string(),
+        ));
+    }
+    let function = map
+        .get("function")
+        .and_then(Value::as_object)
+        .ok_or_else(|| {
+            Error::Config("canonical function tools require a function object".to_string())
+        })?;
+    if function
+        .get("name")
+        .and_then(Value::as_str)
+        .unwrap_or("")
+        .is_empty()
+    {
+        return Err(Error::Config(
+            "canonical function tools require function.name".to_string(),
+        ));
+    }
+    if !function.contains_key("parameters") {
+        return Err(Error::Config(
+            "canonical function tools require function.parameters".to_string(),
+        ));
+    }
+    let mut cleaned = map.clone();
+    cleaned.remove("output_schema");
+    cleaned.remove("output_examples");
+    Ok(Value::Object(cleaned))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use serde_json::json;
 
-    fn document() -> UseCaseDocument {
-        let value = json!({
+    fn document_value() -> Value {
+        json!({
             "schema_version": 4,
             "project": "demo",
             "environment": "production",
@@ -307,12 +407,92 @@ mod tests {
                 "m2": {"id": "m2", "provider": "openrouter", "model_id": "openai/text-embedding-3-small",
                        "provider_options": {}}
             }
-        });
-        UseCaseDocument::from_value(&value).unwrap().0
+        })
+    }
+
+    fn document() -> UseCaseDocument {
+        UseCaseDocument::from_value(&document_value()).unwrap().0
     }
 
     fn resolve_key(key: &str, options: ResolveOptions) -> Result<Resolution, Error> {
         resolve(&document(), key, &options, Source::Remote, Some("sha256-x"))
+    }
+
+    #[test]
+    fn schema_seven_tools_are_provider_params_and_metadata_is_stripped() {
+        let mut value = document_value();
+        value["schema_version"] = json!(7);
+        value["prompt_versions"]["v1"]["tools"] = json!({
+            "definitions": [{
+                "type": "function",
+                "function": {"name": "search", "parameters": {"type": "object"}},
+                "output_schema": {"type": "object"},
+                "output_examples": [{"ok": true}]
+            }],
+            "tool_choice": "auto",
+            "parallel_tool_calls": false
+        });
+        let document = UseCaseDocument::from_value(&value).unwrap().0;
+        let resolution = resolve(
+            &document,
+            "greeting",
+            &ResolveOptions::default(),
+            Source::Remote,
+            None,
+        )
+        .unwrap();
+        assert_eq!(resolution.params["tool_choice"], json!("auto"));
+        assert_eq!(resolution.params["parallel_tool_calls"], json!(false));
+        assert!(resolution.params["tools"][0].get("output_schema").is_none());
+        assert!(resolution.params["tools"][0]
+            .get("output_examples")
+            .is_none());
+    }
+
+    #[test]
+    fn canonical_tools_validate_shape_and_conflicts() {
+        for (name, tools) in [
+            ("unknown", json!({"definitions": [], "bogus": true})),
+            ("missing definitions", json!({"tool_choice": "auto"})),
+            ("bad definition", json!({"definitions": ["bad"]})),
+            (
+                "missing parameters",
+                json!({"definitions": [{"type":"function", "function":{"name":"search"}}]}),
+            ),
+        ] {
+            let mut value = document_value();
+            value["schema_version"] = json!(7);
+            value["prompt_versions"]["v1"]["tools"] = tools;
+            let document = UseCaseDocument::from_value(&value).unwrap().0;
+            assert!(
+                resolve(
+                    &document,
+                    "greeting",
+                    &ResolveOptions::default(),
+                    Source::Remote,
+                    None
+                )
+                .is_err(),
+                "{name} should fail"
+            );
+        }
+
+        let mut value = document_value();
+        value["schema_version"] = json!(7);
+        value["use_cases"]["greeting"]["default_params"]["tool_choice"] = json!("none");
+        value["prompt_versions"]["v1"]["tools"] = json!({
+            "definitions": [{"type":"function", "function":{"name":"search", "parameters":{"type":"object"}}}],
+            "tool_choice": "auto"
+        });
+        let document = UseCaseDocument::from_value(&value).unwrap().0;
+        assert!(resolve(
+            &document,
+            "greeting",
+            &ResolveOptions::default(),
+            Source::Remote,
+            None
+        )
+        .is_err());
     }
 
     #[test]

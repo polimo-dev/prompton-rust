@@ -9,7 +9,7 @@ use std::time::{Duration, Instant};
 
 use prompton::{
     CallFailure, CallMeta, Client, Completion, ErrorKind, LogConfig, LogRecord, Message, Mode,
-    Result, Status, Usage,
+    Result, Status, TraceEvent, Usage, EVENT_KIND_TOOL_ATTEMPT, EVENT_STATUS_OK,
 };
 use serde_json::{json, Value};
 use support::{StubResponse, StubServer};
@@ -705,4 +705,75 @@ fn a_batch_that_never_gets_through_is_dropped_after_its_attempts() {
         3,
         "one send per attempt, then no more"
     );
+}
+
+#[test]
+fn log_events_posts_events_envelope_and_fills_stable_fields() {
+    let server = StubServer::start(|_, _| {
+        StubResponse::json(202, r#"{"accepted":1,"duplicates":0,"rejected":[]}"#)
+    });
+    let client = quiet_builder(&server).build().unwrap();
+    let mut event = TraceEvent::new();
+    event.insert("trace_id".to_string(), json!("trace-1"));
+    event.insert("event_kind".to_string(), json!(EVENT_KIND_TOOL_ATTEMPT));
+    event.insert("status".to_string(), json!(EVENT_STATUS_OK));
+    event.insert("tool_call_id".to_string(), json!("call_1"));
+    event.insert("tool_name".to_string(), json!("search"));
+    event.insert("arguments".to_string(), json!({"q":"diary"}));
+    event.insert("result".to_string(), json!([{"text":"found"}]));
+    let mut events = vec![event];
+
+    let ack = client.log_events(&mut events, None).unwrap();
+    assert_eq!(ack.accepted, 1);
+    let first_id = events[0]["event_id"].clone();
+    assert!(first_id.as_str().unwrap_or("").len() > 0);
+    assert!(events[0]["observed_at"].as_str().unwrap_or("").len() > 0);
+    assert_eq!(events[0]["sdk"]["version"], prompton::VERSION);
+
+    client.log_events(&mut events, None).unwrap();
+    assert_eq!(events[0]["event_id"], first_id);
+
+    let requests = server.requests();
+    assert_eq!(requests.len(), 2);
+    let envelope = requests[0].json();
+    assert_eq!(envelope["logs"].as_array().unwrap().len(), 0);
+    assert_eq!(envelope["events"].as_array().unwrap().len(), 1);
+    assert!(requests[0].path.contains("environment=production"));
+}
+
+#[test]
+fn log_events_validates_required_fields() {
+    let server = StubServer::start(|_, _| {
+        StubResponse::json(202, r#"{"accepted":1,"duplicates":0,"rejected":[]}"#)
+    });
+    let client = quiet_builder(&server).build().unwrap();
+    let mut missing_trace = vec![TraceEvent::from_iter([
+        (
+            "event_kind".to_string(),
+            json!(prompton::EVENT_KIND_COMPLETION),
+        ),
+        ("status".to_string(), json!(EVENT_STATUS_OK)),
+    ])];
+    assert!(client.log_events(&mut missing_trace, None).is_err());
+
+    let mut bad_kind = vec![TraceEvent::from_iter([
+        ("trace_id".to_string(), json!("t")),
+        ("event_kind".to_string(), json!("weird")),
+        ("status".to_string(), json!(EVENT_STATUS_OK)),
+    ])];
+    assert!(client.log_events(&mut bad_kind, None).is_err());
+
+    let mut too_many = (0..501)
+        .map(|_| {
+            TraceEvent::from_iter([
+                ("trace_id".to_string(), json!("t")),
+                (
+                    "event_kind".to_string(),
+                    json!(prompton::EVENT_KIND_COMPLETION),
+                ),
+                ("status".to_string(), json!(EVENT_STATUS_OK)),
+            ])
+        })
+        .collect::<Vec<_>>();
+    assert!(client.log_events(&mut too_many, None).is_err());
 }

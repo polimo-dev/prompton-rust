@@ -2,18 +2,19 @@
 //!
 //! One request returns everything live in one environment — every deployment, the prompt versions
 //! and models they pin, and the use case metadata — and the SDK reads it locally. The
-//! SDK reads **schema version 4 only**: stale disk caches, old bundles, missing versions and future
-//! schema versions are refused, and the poller keeps looking for an exact-v4 document.
+//! SDK reads schema versions 4 through 7: stale disk caches, old bundles, missing versions and
+//! unsupported future schema versions are refused.
 
 use std::collections::BTreeMap;
 
+use serde::ser::SerializeMap;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
 use crate::template::Engine;
 
 /// The schema version this SDK reads.
-pub const SCHEMA_VERSION: i64 = 4;
+pub const SCHEMA_VERSION: i64 = 7;
 
 /// The default payload cap when a use case carries no `payload_policy`.
 pub const DEFAULT_MAX_BYTES: usize = 262_144;
@@ -66,15 +67,26 @@ impl Kind {
 }
 
 /// One chat message of a prompt version, before or after rendering.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Message {
     /// `system`, `user`, `assistant`, …
     pub role: String,
+    /// Slot messages splice a variable containing native provider messages.
+    pub message_type: Option<String>,
     /// The message text — a Liquid template before rendering, the final text after.
     pub content: String,
+    /// The exact JSON content when it was not a string, or when it was an explicit null.
+    pub content_value: Option<Value>,
+    /// Whether the source JSON carried a content key.
+    pub content_present: bool,
     /// The optional OpenAI-style `name`.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
+    /// Native tool result linkage.
+    pub tool_call_id: Option<String>,
+    /// Native assistant tool calls.
+    pub tool_calls: Vec<Value>,
+    /// Provider-native extra message fields.
+    pub extra: Map<String, Value>,
 }
 
 impl Message {
@@ -82,9 +94,104 @@ impl Message {
     pub fn new(role: impl Into<String>, content: impl Into<String>) -> Message {
         Message {
             role: role.into(),
+            message_type: None,
             content: content.into(),
+            content_value: None,
+            content_present: true,
             name: None,
+            tool_call_id: None,
+            tool_calls: Vec::new(),
+            extra: Map::new(),
         }
+    }
+
+    /// Returns the exact JSON content if one was decoded; otherwise the public string content.
+    pub fn content_json(&self) -> Value {
+        self.content_value
+            .clone()
+            .unwrap_or_else(|| Value::String(self.content.clone()))
+    }
+}
+
+impl Serialize for Message {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        let mut len = self.extra.len();
+        len += usize::from(self.message_type.is_some());
+        len += usize::from(!self.role.is_empty());
+        len += usize::from(self.content_present || self.message_type.as_deref() != Some("slot"));
+        len += usize::from(self.name.is_some());
+        len += usize::from(self.tool_call_id.is_some());
+        len += usize::from(!self.tool_calls.is_empty());
+        let mut map = serializer.serialize_map(Some(len))?;
+        for (key, value) in &self.extra {
+            map.serialize_entry(key, value)?;
+        }
+        if let Some(message_type) = &self.message_type {
+            map.serialize_entry("type", message_type)?;
+        }
+        if !self.role.is_empty() {
+            map.serialize_entry("role", &self.role)?;
+        }
+        if self.content_present || self.message_type.as_deref() != Some("slot") {
+            map.serialize_entry("content", &self.content_json())?;
+        }
+        if let Some(name) = &self.name {
+            map.serialize_entry("name", name)?;
+        }
+        if let Some(tool_call_id) = &self.tool_call_id {
+            map.serialize_entry("tool_call_id", tool_call_id)?;
+        }
+        if !self.tool_calls.is_empty() {
+            map.serialize_entry("tool_calls", &self.tool_calls)?;
+        }
+        map.end()
+    }
+}
+
+impl<'de> Deserialize<'de> for Message {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let mut raw = Map::<String, Value>::deserialize(deserializer)?;
+        let role = raw
+            .remove("role")
+            .and_then(|v| v.as_str().map(str::to_string))
+            .unwrap_or_default();
+        let message_type = raw
+            .remove("type")
+            .and_then(|v| v.as_str().map(str::to_string));
+        let name = raw
+            .remove("name")
+            .and_then(|v| v.as_str().map(str::to_string));
+        let tool_call_id = raw
+            .remove("tool_call_id")
+            .and_then(|v| v.as_str().map(str::to_string));
+        let tool_calls = raw
+            .remove("tool_calls")
+            .and_then(|v| v.as_array().cloned())
+            .unwrap_or_default();
+        let content_present = raw.contains_key("content");
+        let content_value = raw.remove("content");
+        let content = content_value
+            .as_ref()
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_string();
+        Ok(Message {
+            role,
+            message_type,
+            content,
+            content_value,
+            content_present,
+            name,
+            tool_call_id,
+            tool_calls,
+            extra: raw,
+        })
     }
 }
 
@@ -193,6 +300,8 @@ pub struct PromptVersion {
     pub engine: Engine,
     /// The chat messages, for a `chat` use case.
     pub messages: Option<Vec<Message>>,
+    /// Provider-visible chat tools plus PromptOn authoring metadata.
+    pub tools: Option<Map<String, Value>>,
     /// The single template string, for a `text` use case.
     pub text_template: Option<String>,
 }
@@ -271,7 +380,7 @@ impl UseCaseDocument {
                 let version = version.as_i64().ok_or_else(|| {
                     DecodeError::Invalid("schema_version must be an integer".to_string())
                 })?;
-                if version != SCHEMA_VERSION {
+                if !(4..=SCHEMA_VERSION).contains(&version) {
                     return Err(DecodeError::UnsupportedSchemaVersion(version));
                 }
                 version
@@ -290,6 +399,7 @@ impl UseCaseDocument {
 
         let use_cases_raw = map
             .get("use_cases")
+            .or_else(|| map.get("prompts"))
             .and_then(Value::as_object)
             .ok_or_else(|| {
                 DecodeError::Invalid("use_cases is required and must be an object".to_string())
@@ -436,7 +546,11 @@ fn decode_payload_policy(raw: &Map<String, Value>) -> PayloadPolicy {
 
 fn decode_deployment(key: &str, raw: &Map<String, Value>) -> Deployment {
     let mut prompt_pins = BTreeMap::new();
-    if let Some(pins) = raw.get("prompt_pins").and_then(Value::as_object) {
+    if let Some(pins) = raw
+        .get("prompt_pins")
+        .or_else(|| raw.get("template_pins"))
+        .and_then(Value::as_object)
+    {
         for (name, version_id) in pins {
             if let Some(version_id) = version_id.as_str() {
                 prompt_pins.insert(name.clone(), version_id.to_string());
@@ -463,11 +577,7 @@ fn decode_prompt_version(id: &str, raw: &Map<String, Value>) -> PromptVersion {
             entries
                 .iter()
                 .filter_map(|entry| entry.as_object())
-                .map(|entry| Message {
-                    role: string_of(entry.get("role")).unwrap_or_default(),
-                    content: string_of(entry.get("content")).unwrap_or_default(),
-                    name: string_of(entry.get("name")),
-                })
+                .filter_map(|entry| serde_json::from_value(Value::Object(entry.clone())).ok())
                 .collect::<Vec<_>>()
         });
 
@@ -477,6 +587,7 @@ fn decode_prompt_version(id: &str, raw: &Map<String, Value>) -> PromptVersion {
         number: raw.get("number").and_then(Value::as_i64),
         engine: Engine::from_wire(raw.get("engine").and_then(Value::as_str)),
         messages,
+        tools: raw.get("tools").and_then(Value::as_object).cloned(),
         text_template: string_of(raw.get("text_template")),
     }
 }
@@ -587,12 +698,17 @@ mod tests {
     }
 
     #[test]
-    fn refuses_newer_schema_versions() {
+    fn accepts_schema_versions_through_seven_and_refuses_future() {
+        for version in [5, 6, 7] {
+            let mut value = document();
+            value["schema_version"] = json!(version);
+            assert!(UseCaseDocument::from_value(&value).is_ok());
+        }
         let mut value = document();
-        value["schema_version"] = json!(5);
+        value["schema_version"] = json!(8);
         assert_eq!(
             UseCaseDocument::from_value(&value),
-            Err(DecodeError::UnsupportedSchemaVersion(5))
+            Err(DecodeError::UnsupportedSchemaVersion(8))
         );
     }
 

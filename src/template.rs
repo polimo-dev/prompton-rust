@@ -173,16 +173,42 @@ pub fn render_messages(
     vars: &Vars,
     engine: Engine,
 ) -> Result<Vec<crate::snapshot::Message>, TemplateError> {
-    messages
-        .iter()
-        .map(|message| {
-            Ok(crate::snapshot::Message {
-                role: message.role.clone(),
-                content: render(&message.content, vars, engine)?,
-                name: message.name.clone(),
-            })
-        })
-        .collect()
+    let mut out = Vec::new();
+    for message in messages {
+        if message.message_type.as_deref() == Some("slot") {
+            let name = message.name.as_deref().unwrap_or("");
+            let value = vars
+                .as_map()
+                .get(name)
+                .ok_or_else(|| TemplateError::MissingVariable(name.to_string()))?;
+            let Value::Array(items) = value else {
+                return Err(TemplateError::Render(format!(
+                    "message slot {name} must be a list"
+                )));
+            };
+            for item in items {
+                let message = serde_json::from_value::<crate::snapshot::Message>(item.clone())
+                    .map_err(|_| {
+                        TemplateError::Render(format!("message slot {name} must contain objects"))
+                    })?;
+                out.push(message);
+            }
+        } else if let Some(Value::String(content)) = &message.content_value {
+            let mut rendered = message.clone();
+            rendered.content = render(content, vars, engine)?;
+            rendered.content_value = Some(Value::String(rendered.content.clone()));
+            out.push(rendered);
+        } else if message.content_value.is_none() {
+            let mut rendered = message.clone();
+            rendered.content = render(&message.content, vars, engine)?;
+            rendered.content_value = Some(Value::String(rendered.content.clone()));
+            rendered.content_present = true;
+            out.push(rendered);
+        } else {
+            out.push(message.clone());
+        }
+    }
+    Ok(out)
 }
 
 /// Why a template failed the static whitelist check.
@@ -1493,6 +1519,31 @@ mod tests {
                 LintReason::DisallowedTag("endcapture".into())
             ]
         );
+    }
+
+    #[test]
+    fn message_slots_require_variable_lists() {
+        let messages = vec![crate::snapshot::Message {
+            role: String::new(),
+            message_type: Some("slot".to_string()),
+            content: String::new(),
+            content_value: None,
+            content_present: false,
+            name: Some("history".to_string()),
+            tool_call_id: None,
+            tool_calls: Vec::new(),
+            extra: serde_json::Map::new(),
+        }];
+        assert_eq!(
+            render_messages(&messages, &Vars::from(json!({})), Engine::Liquid).unwrap_err(),
+            TemplateError::MissingVariable("history".to_string())
+        );
+        assert!(render_messages(
+            &messages,
+            &Vars::from(json!({"history":"bad"})),
+            Engine::Liquid
+        )
+        .is_err());
     }
 
     #[test]
