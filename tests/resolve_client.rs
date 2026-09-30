@@ -102,6 +102,24 @@ fn a_call_with_variables_is_never_cached() {
 }
 
 #[test]
+fn a_numeric_deployment_revision_from_the_server_is_invalid() {
+    let server = StubServer::start(|_, _| {
+        let mut body: serde_json::Value =
+            serde_json::from_str(&prompt_body("default", "Say hello to {{ name }}.")).unwrap();
+        body["deployment"]["revision"] = json!(3);
+        StubResponse::json(200, body.to_string())
+    });
+    let client = client_for(&server, Duration::from_secs(60));
+
+    match client.prompt_remote(&RemotePromptRequest::new("greeting")) {
+        Err(Error::Transport(message)) => {
+            assert!(message.contains("deployment revision"), "{message}");
+        }
+        other => panic!("expected invalid deployment revision, got {other:?}"),
+    }
+}
+
+#[test]
 fn the_prompt_name_is_part_of_the_cache_key() {
     let server = StubServer::start(|request, _| {
         let prompt = request.json()["template"]

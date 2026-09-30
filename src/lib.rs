@@ -924,7 +924,9 @@ impl RemotePrompt {
             deployment_revision: object
                 .get("deployment")
                 .and_then(|deployment| deployment.get("revision"))
-                .and_then(revision_of),
+                .map(revision_of)
+                .transpose()?
+                .flatten(),
             prompt: string("template").or_else(|| string("prompt")),
             prompt_names: object
                 .get("template_names")
@@ -1005,10 +1007,12 @@ impl RemotePrompt {
     }
 }
 
-fn revision_of(value: &Value) -> Option<String> {
+fn revision_of(value: &Value) -> SdkResult<Option<String>> {
     match value {
-        Value::String(string) => Some(string.clone()),
-        Value::Number(number) => number.as_i64().map(|value| format!("v2026.09.30-{value}")),
-        _ => None,
+        Value::String(string) => Ok(Some(string.clone())),
+        Value::Null => Ok(None),
+        _ => Err(Error::Transport(
+            "prompt returned invalid deployment revision: must be a string".to_string(),
+        )),
     }
 }

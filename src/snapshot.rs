@@ -422,7 +422,7 @@ impl UseCaseDocument {
                     for (key, raw) in raw_map {
                         match raw.as_object() {
                             Some(raw) => {
-                                deployments.insert(key.clone(), decode_deployment(key, raw));
+                                deployments.insert(key.clone(), decode_deployment(key, raw)?);
                             }
                             None => warnings.push(format!("deployment {key} is not an object")),
                         }
@@ -544,7 +544,7 @@ fn decode_payload_policy(raw: &Map<String, Value>) -> PayloadPolicy {
     }
 }
 
-fn decode_deployment(key: &str, raw: &Map<String, Value>) -> Deployment {
+fn decode_deployment(key: &str, raw: &Map<String, Value>) -> Result<Deployment, DecodeError> {
     let mut prompt_pins = BTreeMap::new();
     if let Some(pins) = raw
         .get("prompt_pins")
@@ -558,15 +558,15 @@ fn decode_deployment(key: &str, raw: &Map<String, Value>) -> Deployment {
         }
     }
 
-    Deployment {
+    Ok(Deployment {
         id: string_of(raw.get("id")),
         use_case_key: string_of(raw.get("use_case_key")).unwrap_or_else(|| key.to_string()),
-        revision: revision_of(raw.get("revision")),
+        revision: revision_of(raw.get("revision"))?,
         model_id: string_of(raw.get("model_id")),
         params: object_of(raw.get("params")),
         provider_options: object_of(raw.get("provider_options")),
         prompt_pins,
-    }
+    })
 }
 
 fn decode_prompt_version(id: &str, raw: &Map<String, Value>) -> PromptVersion {
@@ -622,11 +622,13 @@ fn string_of(value: Option<&Value>) -> Option<String> {
     }
 }
 
-fn revision_of(value: Option<&Value>) -> Option<String> {
+fn revision_of(value: Option<&Value>) -> Result<Option<String>, DecodeError> {
     match value {
-        Some(Value::String(string)) => Some(string.clone()),
-        Some(Value::Number(number)) => number.as_i64().map(|value| format!("v2026.09.30-{value}")),
-        _ => None,
+        Some(Value::String(string)) => Ok(Some(string.clone())),
+        Some(Value::Null) | None => Ok(None),
+        Some(_) => Err(DecodeError::Invalid(
+            "deployment revision must be a string".to_string(),
+        )),
     }
 }
 
@@ -737,6 +739,18 @@ mod tests {
             UseCaseDocument::from_value(&text),
             Err(DecodeError::Invalid(
                 "schema_version must be an integer".to_string()
+            ))
+        );
+    }
+
+    #[test]
+    fn refuses_numeric_deployment_revisions() {
+        let mut value = document();
+        value["deployments"]["greeting"]["revision"] = json!(3);
+        assert_eq!(
+            UseCaseDocument::from_value(&value),
+            Err(DecodeError::Invalid(
+                "deployment revision must be a string".to_string()
             ))
         );
     }
