@@ -77,7 +77,7 @@ fn every_use_case_case() {
         );
         assert_eq!(
             resolved.deployment_revision,
-            expect["revision"].as_i64(),
+            expect["revision"].as_str().map(str::to_string),
             "{name}: revision"
         );
         assert_eq!(

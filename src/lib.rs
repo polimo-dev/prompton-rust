@@ -731,8 +731,8 @@ pub struct UseCase {
     pub provider_options: Map<String, Value>,
     /// The live deployment's id.
     pub deployment_id: Option<String>,
-    /// The live deployment's revision number.
-    pub deployment_revision: Option<i64>,
+    /// The live deployment's UTC-date revision label.
+    pub deployment_revision: Option<String>,
     /// The prompt name that was chosen.
     pub prompt: Option<String>,
     /// Every prompt name the live revision pins.
@@ -761,7 +761,7 @@ impl UseCase {
             params: resolution.params.clone(),
             provider_options: resolution.provider_options.clone(),
             deployment_id: resolution.deployment_id.clone(),
-            deployment_revision: resolution.deployment_revision,
+            deployment_revision: resolution.deployment_revision.clone(),
             prompt: resolution.prompt.clone(),
             prompt_names: resolution.available_prompts.clone(),
             source: resolution.source,
@@ -852,8 +852,8 @@ pub struct RemotePrompt {
     pub kind: Kind,
     /// The live deployment's id.
     pub deployment_id: Option<String>,
-    /// The live deployment's revision number.
-    pub deployment_revision: Option<i64>,
+    /// The live deployment's UTC-date revision label.
+    pub deployment_revision: Option<String>,
     /// The prompt name that was used.
     pub prompt: Option<String>,
     /// Every prompt name the live revision pins.
@@ -924,7 +924,7 @@ impl RemotePrompt {
             deployment_revision: object
                 .get("deployment")
                 .and_then(|deployment| deployment.get("revision"))
-                .and_then(Value::as_i64),
+                .and_then(revision_of),
             prompt: string("template").or_else(|| string("prompt")),
             prompt_names: object
                 .get("template_names")
@@ -1002,5 +1002,13 @@ impl RemotePrompt {
                 self.key
             )))),
         }
+    }
+}
+
+fn revision_of(value: &Value) -> Option<String> {
+    match value {
+        Value::String(string) => Some(string.clone()),
+        Value::Number(number) => number.as_i64().map(|value| format!("v2026.09.30-{value}")),
+        _ => None,
     }
 }

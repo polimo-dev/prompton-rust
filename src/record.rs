@@ -190,9 +190,9 @@ pub struct LogRecord {
     /// The deployment revision that resolved this call.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub deployment_id: Option<String>,
-    /// That revision's number.
+    /// That revision's UTC-date label.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub deployment_revision: Option<i64>,
+    pub deployment_revision: Option<String>,
     /// The prompt template name that was used.
     #[serde(
         default,
@@ -326,7 +326,7 @@ impl LogRecord {
             self.deployment_id = resolution.deployment_id.clone();
         }
         if self.deployment_revision.is_none() {
-            self.deployment_revision = resolution.deployment_revision;
+            self.deployment_revision = resolution.deployment_revision.clone();
         }
         if self.prompt.is_none() {
             self.prompt = resolution.prompt.clone();

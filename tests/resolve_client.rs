@@ -13,7 +13,7 @@ fn prompt_body(prompt: &str, content: &str) -> String {
     json!({
         "key": "greeting",
         "kind": "chat",
-        "deployment": {"id": "0198f2a1-0000-7000-8000-00000000d001", "revision": 3},
+        "deployment": {"id": "0198f2a1-0000-7000-8000-00000000d001", "revision": "v2026.09.30-3"},
         "template": prompt,
         "template_names": ["default", "ko"],
         "model_id": "0198f2a1-0000-7000-8000-00000000e001",
@@ -64,7 +64,10 @@ fn a_variable_less_answer_is_cached_and_rendered_locally() {
     assert_eq!(answer.kind, Kind::Chat);
     assert_eq!(answer.model.as_deref(), Some("openai/gpt-4o-mini"));
     assert_eq!(answer.prompt_names, vec!["default", "ko"]);
-    assert_eq!(answer.deployment_revision, Some(3));
+    assert_eq!(
+        answer.deployment_revision,
+        Some("v2026.09.30-3".to_string())
+    );
     assert_eq!(answer.source, prompton::Source::Remote);
 
     let rendered = answer.messages(json!({"name": "Ada"})).unwrap();
@@ -154,7 +157,10 @@ fn a_rate_limit_or_a_5xx_is_answered_from_the_cache() {
     let after_500 = client
         .prompt_remote(&RemotePromptRequest::new("greeting"))
         .expect("still serving");
-    assert_eq!(after_500.deployment_revision, Some(3));
+    assert_eq!(
+        after_500.deployment_revision,
+        Some("v2026.09.30-3".to_string())
+    );
     assert_eq!(server.request_count(), 3);
 }
 

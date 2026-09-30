@@ -40,7 +40,7 @@
           ],
           "sort": null
         },
-        "revision": 3,
+        "revision": "v2026.09.30-3",
         "source": "remote",
         "warnings": []
       },
@@ -88,7 +88,7 @@
           ],
           "sort": null
         },
-        "revision": 3,
+        "revision": "v2026.09.30-3",
         "source": "remote",
         "warnings": []
       },
@@ -138,7 +138,7 @@
           ],
           "sort": null
         },
-        "revision": 3,
+        "revision": "v2026.09.30-3",
         "source": "remote",
         "warnings": []
       },
@@ -190,7 +190,7 @@
           ],
           "sort": null
         },
-        "revision": 3,
+        "revision": "v2026.09.30-3",
         "source": "remote",
         "warnings": []
       },
@@ -257,7 +257,7 @@
             "OpenAI"
           ]
         },
-        "revision": 1,
+        "revision": "v2026.09.30-1",
         "source": "remote",
         "text": "Summarize the following notes in one paragraph.\n- alpha\n- beta\n- gamma\n",
         "warnings": []
@@ -299,7 +299,7 @@
             "OpenAI"
           ]
         },
-        "revision": 1,
+        "revision": "v2026.09.30-1",
         "source": "remote",
         "text": "Summarize the following notes in one paragraph.\n{% for item in items %}- {{ item }}\n{% endfor %}",
         "warnings": []
@@ -324,7 +324,7 @@
         "prompt_version": null,
         "provider": "openrouter",
         "provider_options": {},
-        "revision": 2,
+        "revision": "v2026.09.30-2",
         "source": "remote",
         "warnings": []
       },
@@ -349,7 +349,7 @@
         "prompt_version": null,
         "provider": "openrouter",
         "provider_options": {},
-        "revision": 2,
+        "revision": "v2026.09.30-2",
         "source": "remote",
         "warnings": []
       },
@@ -416,7 +416,7 @@
             "OpenAI"
           ]
         },
-        "revision": 7,
+        "revision": "v2026.09.30-7",
         "source": "remote",
         "warnings": []
       },
@@ -465,7 +465,7 @@
             "OpenAI"
           ]
         },
-        "revision": 1,
+        "revision": "v2026.09.30-1",
         "source": "remote",
         "warnings": [
           "missing_prompt_version: 0198f2a1-0000-7000-8000-0000000000ff",
@@ -500,7 +500,7 @@
               "OpenAI"
             ]
           },
-          "revision": 1
+          "revision": "v2026.09.30-1"
         }
       },
       "environment": "production",
@@ -536,7 +536,7 @@
           },
           "prompt_pins": {},
           "provider_options": {},
-          "revision": 2
+          "revision": "v2026.09.30-2"
         },
         "greeting": {
           "id": "0198f2a1-0000-7000-8000-00000000d001",
@@ -552,7 +552,7 @@
             "allow_fallbacks": true,
             "sort": null
           },
-          "revision": 3
+          "revision": "v2026.09.30-3"
         },
         "summarize": {
           "id": "0198f2a1-0000-7000-8000-00000000d002",
@@ -562,7 +562,7 @@
             "default": "0198f2a1-0000-7000-8000-00000000a003"
           },
           "provider_options": {},
-          "revision": 1
+          "revision": "v2026.09.30-1"
         }
       },
       "environment": "production",
@@ -733,7 +733,7 @@
             "default": "0198f2a1-0000-7000-8000-00000000a004"
           },
           "provider_options": {},
-          "revision": 7
+          "revision": "v2026.09.30-7"
         }
       },
       "environment": "staging",

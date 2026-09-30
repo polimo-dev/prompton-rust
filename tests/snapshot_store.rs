@@ -773,7 +773,10 @@ fn resolving_is_safe_from_many_threads_at_once() {
         handles.push(std::thread::spawn(move || {
             for _ in 0..200 {
                 let resolution = client.use_case("greeting").expect("use_case");
-                assert_eq!(resolution.deployment_revision, Some(3));
+                assert_eq!(
+                    resolution.deployment_revision,
+                    Some("v2026.09.30-3".to_string())
+                );
             }
         }));
     }

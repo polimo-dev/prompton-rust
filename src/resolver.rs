@@ -76,8 +76,8 @@ pub(crate) struct Resolution {
     pub kind: Kind,
     /// The live deployment revision's id.
     pub deployment_id: Option<String>,
-    /// The live deployment revision number.
-    pub deployment_revision: Option<i64>,
+    /// The live deployment revision label.
+    pub deployment_revision: Option<String>,
     /// The prompt name that was chosen; `None` for an embedding use case.
     pub prompt: Option<String>,
     /// Every prompt name the live revision pins.
@@ -242,7 +242,7 @@ pub(crate) fn resolve(
         use_case: use_case_key.to_string(),
         kind: use_case.kind.clone(),
         deployment_id: deployment.id.clone(),
-        deployment_revision: deployment.revision,
+        deployment_revision: deployment.revision.clone(),
         prompt: prompt_name,
         available_prompts,
         model: model.and_then(|model| model.model_id.clone()),
@@ -389,10 +389,10 @@ mod tests {
                 "draft": {"id": "u3", "kind": "chat", "default_params": {}, "input_schema": []}
             },
             "deployments": {
-                "greeting": {"id": "d1", "revision": 3, "model_id": "m1",
+                "greeting": {"id": "d1", "revision": "v2026.09.30-3", "model_id": "m1",
                              "params": {"temperature": 0.2}, "provider_options": {"sort": null},
                              "prompt_pins": {"default": "v1", "ko": "v2"}},
-                "embed": {"id": "d2", "revision": 2, "model_id": "m2", "params": {},
+                "embed": {"id": "d2", "revision": "v2026.09.30-2", "model_id": "m2", "params": {},
                           "provider_options": {}, "prompt_pins": {}}
             },
             "prompt_versions": {

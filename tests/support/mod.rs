@@ -259,7 +259,7 @@ pub fn document_json(environment: &str, project: &str, greeting: &str) -> String
         "deployments": {
             "greeting": {
                 "id": "0198f2a1-0000-7000-8000-00000000d001",
-                "revision": 3,
+                "revision": "v2026.09.30-3",
                 "model_id": "0198f2a1-0000-7000-8000-00000000e001",
                 "params": {"temperature": 0.2},
                 "provider_options": {},

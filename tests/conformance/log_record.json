@@ -9,7 +9,7 @@
             "plan": "pro"
           },
           "deployment_id": "0198f2a1-0000-7000-8000-00000000d001",
-          "deployment_revision": 3,
+          "deployment_revision": "v2026.09.30-3",
           "end_user_ref": "user-42",
           "finish_reason": "stop",
           "id": "0198f2a1-1111-7000-8000-000000000001",
@@ -74,7 +74,7 @@
         {
           "context": {},
           "deployment_id": "0198f2a1-0000-7000-8000-00000000d001",
-          "deployment_revision": 3,
+          "deployment_revision": "v2026.09.30-3",
           "error": {
             "kind": "rate_limited",
             "message": "rate limited by upstream provider",
@@ -128,7 +128,7 @@
         {
           "context": {},
           "deployment_id": "0198f2a1-0000-7000-8000-00000000d001",
-          "deployment_revision": 3,
+          "deployment_revision": "v2026.09.30-3",
           "error": {
             "kind": "parse",
             "message": "unexpected end of JSON input"
@@ -185,7 +185,7 @@
         {
           "context": {},
           "deployment_id": "0198f2a1-0000-7000-8000-00000000d003",
-          "deployment_revision": 2,
+          "deployment_revision": "v2026.09.30-2",
           "id": "0198f2a1-1111-7000-8000-000000000004",
           "input": {
             "variables": {
@@ -221,7 +221,7 @@
         },
         {
           "deployment_id": "0198f2a1-0000-7000-8000-00000000d002",
-          "deployment_revision": 1,
+          "deployment_revision": "v2026.09.30-1",
           "finish_reason": "stop",
           "id": "0198f2a1-1111-7000-8000-000000000005",
           "input": {
@@ -328,7 +328,7 @@
           "plan": "pro"
         },
         "deployment_id": "0198f2a1-0000-7000-8000-00000000d001",
-        "deployment_revision": 3,
+        "deployment_revision": "v2026.09.30-3",
         "end_user_ref": "user-42",
         "finish_reason": "stop",
         "id": "0198f2a1-1111-7000-8000-000000000001",
@@ -398,7 +398,7 @@
       "record": {
         "context": {},
         "deployment_id": "0198f2a1-0000-7000-8000-00000000d001",
-        "deployment_revision": 3,
+        "deployment_revision": "v2026.09.30-3",
         "error": {
           "kind": "rate_limited",
           "message": "rate limited by upstream provider",
@@ -457,7 +457,7 @@
       "record": {
         "context": {},
         "deployment_id": "0198f2a1-0000-7000-8000-00000000d001",
-        "deployment_revision": 3,
+        "deployment_revision": "v2026.09.30-3",
         "error": {
           "kind": "parse",
           "message": "unexpected end of JSON input"
@@ -519,7 +519,7 @@
       "record": {
         "context": {},
         "deployment_id": "0198f2a1-0000-7000-8000-00000000d003",
-        "deployment_revision": 2,
+        "deployment_revision": "v2026.09.30-2",
         "id": "0198f2a1-1111-7000-8000-000000000004",
         "input": {
           "variables": {
@@ -560,7 +560,7 @@
       "name": "text/manual_log_with_input_text",
       "record": {
         "deployment_id": "0198f2a1-0000-7000-8000-00000000d002",
-        "deployment_revision": 1,
+        "deployment_revision": "v2026.09.30-1",
         "finish_reason": "stop",
         "id": "0198f2a1-1111-7000-8000-000000000005",
         "input": {

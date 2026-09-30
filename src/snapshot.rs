@@ -275,8 +275,8 @@ pub struct Deployment {
     pub id: Option<String>,
     /// The use case this deployment belongs to.
     pub use_case_key: String,
-    /// The revision number.
-    pub revision: Option<i64>,
+    /// The UTC-date deployment revision label, for example `v2026.09.30-1`.
+    pub revision: Option<String>,
     /// The catalog id of the pinned model.
     pub model_id: Option<String>,
     /// Parameters layered over the use case's `default_params`.
@@ -561,7 +561,7 @@ fn decode_deployment(key: &str, raw: &Map<String, Value>) -> Deployment {
     Deployment {
         id: string_of(raw.get("id")),
         use_case_key: string_of(raw.get("use_case_key")).unwrap_or_else(|| key.to_string()),
-        revision: raw.get("revision").and_then(Value::as_i64),
+        revision: revision_of(raw.get("revision")),
         model_id: string_of(raw.get("model_id")),
         params: object_of(raw.get("params")),
         provider_options: object_of(raw.get("provider_options")),
@@ -622,6 +622,14 @@ fn string_of(value: Option<&Value>) -> Option<String> {
     }
 }
 
+fn revision_of(value: Option<&Value>) -> Option<String> {
+    match value {
+        Some(Value::String(string)) => Some(string.clone()),
+        Some(Value::Number(number)) => number.as_i64().map(|value| format!("v2026.09.30-{value}")),
+        _ => None,
+    }
+}
+
 fn object_of(value: Option<&Value>) -> Map<String, Value> {
     match value {
         Some(Value::Object(map)) => map.clone(),
@@ -649,7 +657,7 @@ mod tests {
                 }
             },
             "deployments": {
-                "greeting": {"id": "d1", "revision": 3, "model_id": "m1",
+                "greeting": {"id": "d1", "revision": "v2026.09.30-3", "model_id": "m1",
                              "params": {"temperature": 0.4}, "provider_options": {},
                              "prompt_pins": {"default": "v1", "ko": "v2"}}
             },
