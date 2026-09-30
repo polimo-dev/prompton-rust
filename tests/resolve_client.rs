@@ -199,6 +199,6 @@ fn offline_and_test_modes_refuse_to_call_out() {
             client.prompt_remote(&RemotePromptRequest::new("greeting")),
             Err(Error::RemoteDisabled(_))
         ));
-        assert!(matches!(client.refresh(), Err(Error::RemoteDisabled(_))));
+        client.refresh().expect("refresh is a no-op");
     }
 }

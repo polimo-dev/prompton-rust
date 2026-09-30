@@ -16,8 +16,10 @@ use crate::snapshot::PayloadPolicy;
 pub const DEFAULT_HOST: &str = "https://app.prompton.ai";
 /// The environment the SDK reads when nothing says otherwise.
 pub const DEFAULT_ENVIRONMENT: &str = "production";
-/// How long a use-case document is served from memory before a refresh is triggered.
+/// Compatibility default for legacy full-document refresh flows.
 pub const DEFAULT_CACHE_TTL: Duration = Duration::from_secs(10);
+/// Runtime prompt config freshness and attempt gate.
+pub const DEMAND_CONFIG_TTL: Duration = Duration::from_secs(10);
 /// The ceiling on the refresh backoff after repeated failures.
 pub const MAX_BACKOFF: Duration = Duration::from_secs(300);
 
@@ -88,8 +90,10 @@ pub struct Config {
     pub environment: String,
     /// The project slug, from the key or set explicitly.
     pub project: Option<String>,
-    /// How long a use-case document is served before a refresh is triggered.
+    /// Compatibility TTL for legacy full-document refresh flows. Runtime prompt config fetches use
+    /// `demand_cache_ttl`, which defaults to the SDK contract of 10 seconds.
     pub cache_ttl: Duration,
+    pub(crate) demand_cache_ttl: Duration,
     /// The per-request timeout.
     pub request_timeout: Duration,
     /// Where the disk cache lives.
@@ -100,9 +104,10 @@ pub struct Config {
     pub mode: Mode,
     /// Send `sha256(end_user_ref)` instead of the raw reference.
     pub hash_end_user: bool,
-    /// Whether to run the background poller.
+    /// Whether to run the background poller. Defaults to false; normal runtime fetches are demand-driven.
     pub poll: bool,
     /// Whether to fetch the use-case document synchronously at start when no tier has one.
+    /// Defaults to false so idle processes do not contact PromptOn.
     pub fetch_on_start: bool,
     /// The monitoring-log buffer's thresholds.
     pub log: LogConfig,
@@ -126,6 +131,7 @@ impl std::fmt::Debug for Config {
             .field("environment", &self.environment)
             .field("project", &self.project)
             .field("cache_ttl", &self.cache_ttl)
+            .field("demand_cache_ttl", &self.demand_cache_ttl)
             .field("request_timeout", &self.request_timeout)
             .field("disk_cache", &self.disk_cache)
             .field("bundle", &self.bundle)
@@ -180,6 +186,7 @@ pub struct ClientBuilder {
     environment: Option<String>,
     project: Option<String>,
     cache_ttl: Option<Duration>,
+    demand_cache_ttl: Option<Duration>,
     request_timeout: Option<Duration>,
     disk_cache: Option<DiskCache>,
     bundle: Option<PathBuf>,
@@ -237,9 +244,16 @@ impl ClientBuilder {
         self
     }
 
-    /// How long a use-case document is served from memory before a refresh is triggered (default 10 s).
+    /// Legacy full-document cache TTL. Runtime prompt config fetches always use the 10-second SDK
+    /// contract; this remains for explicit full-document refresh compatibility.
     pub fn cache_ttl(mut self, cache_ttl: Duration) -> ClientBuilder {
         self.cache_ttl = Some(cache_ttl);
+        self
+    }
+
+    #[doc(hidden)]
+    pub fn demand_cache_ttl_for_tests(mut self, ttl: Duration) -> ClientBuilder {
+        self.demand_cache_ttl = Some(ttl);
         self
     }
 
@@ -279,16 +293,16 @@ impl ClientBuilder {
         self
     }
 
-    /// Turns the background poller off; refreshes then happen on the next `use_case` call after the TTL.
+    /// Controls the legacy background poller. The default is off; normal runtime refreshes happen
+    /// when a `use_case` call needs configuration and the cached value is stale or missing.
     pub fn poll(mut self, poll: bool) -> ClientBuilder {
         self.poll = Some(poll);
         self
     }
 
     /// Whether a cold start (nothing in memory, on disk or in the bundle) fetches the use-case document
-    /// synchronously before [`ClientBuilder::build`] returns. On by default, so the first `use_case`
-    /// after a cold start has something to work with; turn it off in a process that must never block on
-    /// PromptOn at boot.
+    /// synchronously before [`ClientBuilder::build`] returns. Off by default: the first `use_case`
+    /// call performs the demand fetch for that key.
     pub fn fetch_on_start(mut self, fetch_on_start: bool) -> ClientBuilder {
         self.fetch_on_start = Some(fetch_on_start);
         self
@@ -372,13 +386,14 @@ impl ClientBuilder {
             environment,
             project,
             cache_ttl: self.cache_ttl.unwrap_or(DEFAULT_CACHE_TTL),
+            demand_cache_ttl: self.demand_cache_ttl.unwrap_or(DEMAND_CONFIG_TTL),
             request_timeout: self.request_timeout.unwrap_or(Duration::from_secs(5)),
             disk_cache: self.disk_cache.unwrap_or(DiskCache::Default),
             bundle: self.bundle,
             mode: self.mode.unwrap_or(Mode::Live),
             hash_end_user: self.hash_end_user.unwrap_or(false),
-            poll: self.poll.unwrap_or(true),
-            fetch_on_start: self.fetch_on_start.unwrap_or(true),
+            poll: self.poll.unwrap_or(false),
+            fetch_on_start: self.fetch_on_start.unwrap_or(false),
             log: self.log.unwrap_or_default(),
             payload_defaults: self.payload_defaults.unwrap_or_default(),
             redact: self.redact,

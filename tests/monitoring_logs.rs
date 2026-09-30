@@ -729,8 +729,8 @@ fn log_events_posts_events_envelope_and_fills_stable_fields() {
     let ack = client.log_events(&mut events, None).unwrap();
     assert_eq!(ack.accepted, 1);
     let first_id = events[0]["event_id"].clone();
-    assert!(first_id.as_str().unwrap_or("").len() > 0);
-    assert!(events[0]["observed_at"].as_str().unwrap_or("").len() > 0);
+    assert!(!first_id.as_str().unwrap_or("").is_empty());
+    assert!(!events[0]["observed_at"].as_str().unwrap_or("").is_empty());
     assert_eq!(events[0]["sdk"]["version"], prompton::VERSION);
 
     client.log_events(&mut events, None).unwrap();

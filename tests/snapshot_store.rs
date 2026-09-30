@@ -3,8 +3,9 @@
 
 mod support;
 
+use std::collections::BTreeMap;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use prompton::{
@@ -20,17 +21,88 @@ fn ok_snapshot(greeting: &str) -> StubResponse {
         .with_header("cache-control", "max-age=30")
 }
 
+#[derive(Default)]
+struct ConcurrentFetchClient {
+    calls: AtomicUsize,
+    active: AtomicUsize,
+    max_active: AtomicUsize,
+    urls: Mutex<Vec<String>>,
+}
+
+impl ConcurrentFetchClient {
+    fn max_active(&self) -> usize {
+        self.max_active.load(Ordering::SeqCst)
+    }
+
+    fn urls(&self) -> Vec<String> {
+        self.urls.lock().unwrap().clone()
+    }
+}
+
+impl HttpClient for ConcurrentFetchClient {
+    fn execute(&self, request: HttpRequest) -> Result<HttpResponse, TransportError> {
+        self.calls.fetch_add(1, Ordering::SeqCst);
+        let active = self.active.fetch_add(1, Ordering::SeqCst) + 1;
+        self.max_active.fetch_max(active, Ordering::SeqCst);
+        self.urls.lock().unwrap().push(request.url.clone());
+        std::thread::sleep(Duration::from_millis(100));
+        self.active.fetch_sub(1, Ordering::SeqCst);
+
+        let mut headers = BTreeMap::new();
+        headers.insert("content-type".to_string(), "application/json".to_string());
+        headers.insert(
+            "etag".to_string(),
+            format!("\"etag-{}\"", self.calls.load(Ordering::SeqCst)),
+        );
+        let mut body = document_json("production", "demo", "Hello {{ name }}");
+        if request.url.contains("/prompts/demand_other?") {
+            body = body
+                .replace("\"greeting\"", "\"demand_other\"")
+                .replace("openai/gpt-4o-mini", "openai/other-model");
+        }
+        Ok(HttpResponse {
+            status: 200,
+            headers,
+            body: body.into_bytes(),
+        })
+    }
+}
+
+fn client_with_transport(transport: Arc<dyn HttpClient>, ttl: Duration) -> Client {
+    Client::builder()
+        .base_url("http://127.0.0.1:1/api/v1")
+        .api_key("ptn_demo_secret")
+        .environment("production")
+        .cache_ttl(Duration::from_secs(60))
+        .demand_cache_ttl_for_tests(ttl)
+        .request_timeout(Duration::from_secs(2))
+        .without_disk_cache()
+        .http_client(transport)
+        .log_sink(|_| {})
+        .build()
+        .expect("client")
+}
+
 fn client_for(server: &StubServer, ttl: Duration) -> Client {
     Client::builder()
         .base_url(server.base_url())
         .api_key("ptn_demo_secret")
         .environment("production")
-        .cache_ttl(ttl)
+        .cache_ttl(Duration::from_secs(60))
+        .demand_cache_ttl_for_tests(ttl)
         .request_timeout(Duration::from_secs(2))
         .without_disk_cache()
         .log_sink(|_| {})
         .build()
         .expect("client")
+}
+
+#[test]
+fn startup_and_idle_do_not_fetch_configuration() {
+    let server = StubServer::start(|_, _| ok_snapshot("Hello {{ name }}"));
+    let _client = client_for(&server, Duration::from_secs(60));
+    std::thread::sleep(Duration::from_millis(40));
+    assert_eq!(server.request_count(), 0);
 }
 
 #[test]
@@ -50,6 +122,86 @@ fn every_use_case_inside_the_ttl_is_served_from_memory() {
         "the cache TTL must keep the SDK off the network"
     );
     assert_eq!(client.use_case_fetch_count(), 1);
+}
+
+#[test]
+fn concurrent_same_key_requests_share_one_fetch() {
+    let transport = Arc::new(ConcurrentFetchClient::default());
+    let client = Arc::new(client_with_transport(
+        transport.clone(),
+        Duration::from_secs(60),
+    ));
+
+    let mut threads = Vec::new();
+    for _ in 0..8 {
+        let client = client.clone();
+        threads.push(std::thread::spawn(move || {
+            client.use_case("greeting").expect("use_case")
+        }));
+    }
+    for thread in threads {
+        let resolved = thread.join().expect("thread");
+        assert_eq!(resolved.model.as_deref(), Some("openai/gpt-4o-mini"));
+    }
+
+    assert_eq!(transport.calls.load(Ordering::SeqCst), 1);
+    assert_eq!(transport.urls().len(), 1);
+}
+
+#[test]
+fn concurrent_different_keys_fetch_independently() {
+    let transport = Arc::new(ConcurrentFetchClient::default());
+    let client = Arc::new(client_with_transport(
+        transport.clone(),
+        Duration::from_secs(60),
+    ));
+
+    let greeting = {
+        let client = client.clone();
+        std::thread::spawn(move || client.use_case("greeting").expect("greeting"))
+    };
+    let other = {
+        let client = client.clone();
+        std::thread::spawn(move || client.use_case("demand_other").expect("other"))
+    };
+
+    assert_eq!(
+        greeting.join().expect("greeting").model.as_deref(),
+        Some("openai/gpt-4o-mini")
+    );
+    assert_eq!(
+        other.join().expect("other").model.as_deref(),
+        Some("openai/other-model")
+    );
+
+    assert_eq!(transport.calls.load(Ordering::SeqCst), 2);
+    assert_eq!(
+        transport.max_active(),
+        2,
+        "different keys should not share a global fetch lock"
+    );
+}
+
+#[test]
+fn another_key_fetch_does_not_mutate_a_fresh_key() {
+    let other_doc = document_json("production", "demo", "Hello {{ name }}")
+        .replace("\"greeting\"", "\"demand_other\"")
+        .replace("openai/gpt-4o-mini", "openai/other-model");
+    let server = StubServer::start(move |request, _| {
+        if request.path.starts_with("/api/v1/prompts/demand_other?") {
+            return StubResponse::json(200, other_doc.clone()).with_header("etag", "\"other\"");
+        }
+        ok_snapshot("Hello {{ name }}")
+    });
+    let client = client_for(&server, Duration::from_secs(60));
+
+    let greeting = client.use_case("greeting").expect("greeting");
+    let other = client.use_case("demand_other").expect("other");
+    let greeting_again = client.use_case("greeting").expect("greeting again");
+
+    assert_eq!(greeting.model.as_deref(), Some("openai/gpt-4o-mini"));
+    assert_eq!(greeting_again.model, greeting.model);
+    assert_eq!(other.model.as_deref(), Some("openai/other-model"));
 }
 
 #[test]
@@ -77,7 +229,7 @@ fn a_refresh_after_the_ttl_is_conditional_and_a_304_changes_nothing() {
     assert_eq!(later.source, Source::Remote);
     assert!(
         server.request_count() >= 2,
-        "the poller should have refreshed at least once"
+        "the stale lookup should have refreshed at least once"
     );
     let info = client.use_cases_info();
     assert!(!info.stale, "a 304 confirms the document is current");
@@ -134,7 +286,8 @@ fn a_429_is_honoured_and_the_caller_never_sees_it() {
     });
 
     let client = client_for(&server, Duration::from_millis(50));
-    std::thread::sleep(Duration::from_millis(400));
+    assert!(client.use_case("greeting").is_ok());
+    std::thread::sleep(Duration::from_millis(60));
 
     assert!(
         client.use_case("greeting").is_ok(),
@@ -164,7 +317,8 @@ fn repeated_5xx_backs_off_and_keeps_serving_the_previous_document() {
     });
 
     let client = client_for(&server, Duration::from_millis(50));
-    std::thread::sleep(Duration::from_millis(500));
+    assert_eq!(rendered(&client), "Hello Ada");
+    std::thread::sleep(Duration::from_millis(60));
 
     assert_eq!(
         rendered(&client),
@@ -173,10 +327,7 @@ fn repeated_5xx_backs_off_and_keeps_serving_the_previous_document() {
     );
     let count = server.request_count();
     // 50 ms, then 50, 100, 200, 400 … — a fixed interval would have made ~10 requests by now.
-    assert!(
-        (2..=6).contains(&count),
-        "expected exponential backoff, got {count} requests"
-    );
+    assert_eq!(count, 2, "one initial fetch and one demand failure");
     assert!(client.use_cases_info().failures >= 1);
 }
 
@@ -190,6 +341,161 @@ impl HttpClient for TimingOutClient {
         self.calls.fetch_add(1, Ordering::Relaxed);
         Err(TransportError::timeout("timed out after 5s"))
     }
+}
+
+struct SlowSuccessfulClient {
+    calls: Arc<AtomicUsize>,
+    delay: Duration,
+}
+
+impl HttpClient for SlowSuccessfulClient {
+    fn execute(&self, _request: HttpRequest) -> Result<HttpResponse, TransportError> {
+        self.calls.fetch_add(1, Ordering::SeqCst);
+        std::thread::sleep(self.delay);
+        let mut headers = BTreeMap::new();
+        headers.insert("content-type".to_string(), "application/json".to_string());
+        headers.insert("etag".to_string(), "\"late\"".to_string());
+        Ok(HttpResponse {
+            status: 200,
+            headers,
+            body: document_json("production", "demo", "Late {{ name }}").into_bytes(),
+        })
+    }
+}
+
+#[test]
+fn a_slow_custom_transport_falls_back_after_one_second_and_cannot_late_overwrite() {
+    let dir = support::temp_dir("slow-success");
+    let bundle = dir.join("use-cases.production.json");
+    std::fs::write(
+        &bundle,
+        document_json("production", "demo", "Bundle {{ name }}"),
+    )
+    .unwrap();
+
+    let calls = Arc::new(AtomicUsize::new(0));
+    let client = Client::builder()
+        .base_url("http://127.0.0.1:1/api/v1")
+        .api_key("ptn_demo_secret")
+        .environment("production")
+        .bundle(&bundle)
+        .without_disk_cache()
+        .request_timeout(Duration::from_secs(2))
+        .http_client(Arc::new(SlowSuccessfulClient {
+            calls: calls.clone(),
+            delay: Duration::from_millis(1200),
+        }))
+        .log_sink(|_| {})
+        .build()
+        .unwrap();
+
+    let start = std::time::Instant::now();
+    assert_eq!(rendered(&client), "Bundle Ada");
+    assert!(
+        start.elapsed() < Duration::from_millis(1150),
+        "runtime fetch should fall back after the 1s SDK budget, elapsed {:?}",
+        start.elapsed()
+    );
+
+    std::thread::sleep(Duration::from_millis(350));
+    assert_eq!(rendered(&client), "Bundle Ada");
+    assert_eq!(calls.load(Ordering::SeqCst), 1);
+}
+
+struct SlowFailingClient {
+    calls: Arc<AtomicUsize>,
+    delay: Duration,
+}
+
+impl HttpClient for SlowFailingClient {
+    fn execute(&self, _request: HttpRequest) -> Result<HttpResponse, TransportError> {
+        self.calls.fetch_add(1, Ordering::SeqCst);
+        std::thread::sleep(self.delay);
+        Err(TransportError::timeout("slow failure"))
+    }
+}
+
+#[test]
+fn failed_fetch_gate_is_measured_from_attempt_start() {
+    let dir = support::temp_dir("attempt-start");
+    let bundle = dir.join("use-cases.production.json");
+    std::fs::write(
+        &bundle,
+        document_json("production", "demo", "Bundle {{ name }}"),
+    )
+    .unwrap();
+    let calls = Arc::new(AtomicUsize::new(0));
+    let client = Client::builder()
+        .base_url("http://127.0.0.1:1/api/v1")
+        .api_key("ptn_demo_secret")
+        .environment("production")
+        .bundle(&bundle)
+        .without_disk_cache()
+        .request_timeout(Duration::from_secs(2))
+        .demand_cache_ttl_for_tests(Duration::from_millis(100))
+        .http_client(Arc::new(SlowFailingClient {
+            calls: calls.clone(),
+            delay: Duration::from_millis(120),
+        }))
+        .log_sink(|_| {})
+        .build()
+        .unwrap();
+
+    assert_eq!(rendered(&client), "Bundle Ada");
+    assert_eq!(rendered(&client), "Bundle Ada");
+    assert_eq!(
+        calls.load(Ordering::SeqCst),
+        2,
+        "the second attempt should be allowed once attempt_start + gate has passed"
+    );
+}
+
+#[test]
+fn per_key_disk_cache_survives_restart_with_independent_documents() {
+    let other_doc = document_json("production", "demo", "Hello {{ name }}")
+        .replace("\"greeting\"", "\"demand_other\"")
+        .replace("openai/gpt-4o-mini", "openai/other-model");
+    let server = StubServer::start(move |request, _| {
+        if request.path.starts_with("/api/v1/prompts/demand_other?") {
+            return StubResponse::json(200, other_doc.clone()).with_header("etag", "\"other\"");
+        }
+        ok_snapshot("Hello {{ name }}")
+    });
+    let dir = support::temp_dir("per-key-disk");
+    let disk = dir.join("snapshot.json");
+    let first = Client::builder()
+        .base_url(server.base_url())
+        .api_key("ptn_demo_secret")
+        .environment("production")
+        .disk_cache_path(&disk)
+        .log_sink(|_| {})
+        .build()
+        .unwrap();
+    assert_eq!(
+        first.use_case("greeting").unwrap().model.as_deref(),
+        Some("openai/gpt-4o-mini")
+    );
+    assert_eq!(
+        first.use_case("demand_other").unwrap().model.as_deref(),
+        Some("openai/other-model")
+    );
+    drop(first);
+
+    let restarted = Client::builder()
+        .base_url("http://127.0.0.1:1/api/v1")
+        .api_key("ptn_demo_secret")
+        .environment("production")
+        .disk_cache_path(&disk)
+        .request_timeout(Duration::from_millis(20))
+        .log_sink(|_| {})
+        .build()
+        .unwrap();
+    let greeting = restarted.use_case("greeting").unwrap();
+    let other = restarted.use_case("demand_other").unwrap();
+    assert_eq!(greeting.source, Source::Disk);
+    assert_eq!(other.source, Source::Disk);
+    assert_eq!(greeting.model.as_deref(), Some("openai/gpt-4o-mini"));
+    assert_eq!(other.model.as_deref(), Some("openai/other-model"));
 }
 
 #[test]
@@ -207,7 +513,8 @@ fn a_timeout_leaves_the_bundle_in_place_and_never_fails_a_use_case_lookup() {
         .base_url("http://127.0.0.1:1/api/v1")
         .api_key("ptn_demo_secret")
         .environment("production")
-        .cache_ttl(Duration::from_millis(50))
+        .cache_ttl(Duration::from_secs(60))
+        .demand_cache_ttl_for_tests(Duration::from_millis(50))
         .bundle(&bundle)
         .without_disk_cache()
         .http_client(Arc::new(TimingOutClient {
@@ -340,7 +647,7 @@ fn a_corrupt_or_partial_file_is_ignored_rather_than_fatal() {
 }
 
 #[test]
-fn a_fetched_snapshot_is_written_to_disk_with_a_sidecar() {
+fn export_writes_the_full_snapshot_to_disk_with_a_sidecar() {
     let dir = support::temp_dir("diskwrite");
     let disk = dir.join("nested").join("snapshot.json");
     let server = StubServer::start(|_, _| ok_snapshot("Hello {{ name }}"));
@@ -350,11 +657,12 @@ fn a_fetched_snapshot_is_written_to_disk_with_a_sidecar() {
         .api_key("ptn_demo_secret")
         .environment("production")
         .cache_ttl(Duration::from_secs(60))
-        .disk_cache_path(&disk)
+        .without_disk_cache()
         .log_sink(|_| {})
         .build()
         .unwrap();
     assert!(client.use_case("greeting").is_ok());
+    client.export_use_cases(&disk).expect("export");
 
     let written = std::fs::read(&disk).expect("the disk cache was written");
     let document: serde_json::Value = serde_json::from_slice(&written).unwrap();
@@ -387,7 +695,7 @@ fn a_fetched_snapshot_is_written_to_disk_with_a_sidecar() {
 }
 
 #[test]
-fn fetch_once_and_export_are_synchronous() {
+fn refresh_is_noop_and_export_writes_current_document() {
     let dir = support::temp_dir("export");
     let bundle = dir.join("use-cases.production.json");
     let server = StubServer::start(|_, _| ok_snapshot("Hello {{ name }}"));
@@ -402,9 +710,9 @@ fn fetch_once_and_export_are_synchronous() {
         .build()
         .unwrap();
 
-    let before = server.request_count();
-    client.refresh().expect("a synchronous fetch");
-    assert_eq!(server.request_count(), before + 1);
+    client.refresh().expect("refresh is a no-op");
+    assert_eq!(server.request_count(), 0);
+    assert!(client.use_case("greeting").is_ok());
 
     client.export_use_cases(&bundle).expect("export");
     assert!(bundle.exists());
@@ -444,10 +752,7 @@ fn without_an_api_key_no_remote_call_is_made_and_it_is_said_once() {
 
     assert!(client.use_case("greeting").is_ok());
     assert_eq!(server.request_count(), 0, "no key, no remote calls");
-    assert!(matches!(
-        client.refresh(),
-        Err(prompton::Error::RemoteDisabled(_))
-    ));
+    client.refresh().expect("refresh is a no-op without a key");
 
     let said = lines.lock().unwrap();
     let mentions: Vec<_> = said
@@ -478,7 +783,7 @@ fn resolving_is_safe_from_many_threads_at_once() {
 }
 
 #[test]
-fn without_the_poller_a_stale_use_case_lookup_refreshes_in_the_background() {
+fn without_the_poller_a_stale_use_case_lookup_refreshes_on_demand() {
     let server = StubServer::start(|_, index| {
         if index == 0 {
             ok_snapshot("Hello {{ name }}")
@@ -492,7 +797,8 @@ fn without_the_poller_a_stale_use_case_lookup_refreshes_in_the_background() {
         .base_url(server.base_url())
         .api_key("ptn_demo_secret")
         .environment("production")
-        .cache_ttl(Duration::from_millis(40))
+        .cache_ttl(Duration::from_secs(60))
+        .demand_cache_ttl_for_tests(Duration::from_millis(40))
         .poll(false)
         .without_disk_cache()
         .log_sink(|_| {})
@@ -507,19 +813,13 @@ fn without_the_poller_a_stale_use_case_lookup_refreshes_in_the_background() {
     );
 
     std::thread::sleep(Duration::from_millis(80));
-    // This use_case call is answered from memory and starts a refresh behind it.
-    assert_eq!(rendered(&client), "Hello Ada");
-
-    let deadline = std::time::Instant::now() + Duration::from_secs(3);
-    while server.request_count() < 2 && std::time::Instant::now() < deadline {
-        std::thread::sleep(Duration::from_millis(10));
-    }
+    // The stale use_case call performs the refresh before resolving.
+    assert_eq!(rendered(&client), "Hi Ada!");
     assert_eq!(
         server.request_count(),
         2,
-        "the stale read triggered a refresh"
+        "the stale read triggered a demand refresh"
     );
-    assert_eq!(rendered(&client), "Hi Ada!");
 }
 
 #[test]
@@ -528,7 +828,7 @@ fn fetch_uses_current_prompts_endpoint_and_prompt_document_shape() {
     let production = fixture["documents"]["production"].clone();
     let server = StubServer::start(move |request, _| {
         assert!(
-            request.path.starts_with("/api/v1/prompts?"),
+            request.path.starts_with("/api/v1/prompts/greeting?"),
             "{}",
             request.path
         );

@@ -1,23 +1,23 @@
-//! The snapshot store: three tiers, one background refresh, and a rule that a model call never
-//! fails because PromptOn did.
+//! The snapshot store keeps immutable documents per use case, plus disk and bundle fallbacks.
+//! A model call never fails because PromptOn did.
 //!
-//! * **Memory** holds the last good document and answers every resolve, with no HTTP call inside
-//!   the cache TTL (10 s by default).
+//! * **Memory** holds the last good document for each use case and answers every resolve, with no
+//!   HTTP call inside the cache TTL (10 s by default).
 //! * **Disk** is written atomically (temp file, then rename) with a sidecar holding the ETag and
-//!   `Last-Modified`, and is loaded at start before the first poll returns.
+//!   `Last-Modified`, and is loaded at start.
 //! * **Bundle** is a snapshot file committed into the app, used when memory and disk are empty —
 //!   in a serverless runtime it is the primary cold-start fallback, not a nicety.
 //!
-//! Load order on start is memory → disk → bundle → remote, and the source is reported as
-//! `remote | disk | bundle` on every monitoring log. A document for another environment or
-//! project is never used. A refresh that fails, times out or is rate-limited leaves the previous
-//! document in place and the caller never sees an error; only when no tier has a document does
-//! resolution fail.
+//! Load order on start is memory → disk → bundle. Remote fetches happen on demand for the requested
+//! use case. A document for another environment or project is never used. A refresh that fails,
+//! times out or is rate-limited leaves the previous document in place; only when no tier has a
+//! document does resolution fail.
 
+use std::collections::HashMap;
 use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Condvar, Mutex};
 use std::time::{Duration, Instant, SystemTime};
 
@@ -70,8 +70,12 @@ pub(crate) struct Entry {
 #[derive(Debug, Default)]
 struct State {
     entry: Option<Arc<Entry>>,
+    per_key: HashMap<String, Arc<Entry>>,
     failures: u32,
+    #[allow(dead_code)]
     next_attempt: Option<Instant>,
+    next_attempts: HashMap<String, Instant>,
+    inflight: HashMap<String, u64>,
     stop: bool,
 }
 
@@ -82,7 +86,7 @@ pub(crate) struct Store {
     state: Mutex<State>,
     signal: Condvar,
     fetches: AtomicU64,
-    refreshing: AtomicBool,
+    fetch_tokens: AtomicU64,
 }
 
 impl Store {
@@ -94,22 +98,88 @@ impl Store {
             state: Mutex::new(State::default()),
             signal: Condvar::new(),
             fetches: AtomicU64::new(0),
-            refreshing: AtomicBool::new(false),
+            fetch_tokens: AtomicU64::new(0),
         }
     }
 
-    /// Loads the disk cache, then the bundle. Called once at start, before the first poll.
+    /// Loads the disk cache, then the bundle. Called once at start without remote I/O.
     pub fn load_local(&self) {
         if self.current().is_some() {
             return;
         }
-        if let Some(path) = self.config.disk_cache_path() {
-            if self.load_file(&path, Source::Disk) {
-                return;
-            }
-        }
         if let Some(path) = self.config.bundle.clone() {
             self.load_file(&path, Source::Bundle);
+        }
+        if let Some(path) = self.config.disk_cache_path() {
+            self.load_file(&path, Source::Disk);
+            self.load_key_files(&path);
+        }
+    }
+
+    fn load_key_files(&self, full_path: &Path) {
+        let dir = key_cache_dir(full_path);
+        let entries = match fs::read_dir(&dir) {
+            Ok(entries) => entries,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return,
+            Err(error) => {
+                self.logger.say(format!(
+                    "could not read the prompt disk cache {dir:?}: {error}"
+                ));
+                return;
+            }
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.extension().and_then(|value| value.to_str()) != Some("json") {
+                continue;
+            }
+            let bytes = match fs::read(&path) {
+                Ok(bytes) => bytes,
+                Err(_) => continue,
+            };
+            let (document, warnings) = match UseCaseDocument::from_json(&bytes) {
+                Ok(decoded) => decoded,
+                Err(_) => continue,
+            };
+            if self.accept(&document).is_err() {
+                continue;
+            }
+            for warning in warnings {
+                self.logger.say(format!("snapshot {path:?}: {warning}"));
+            }
+            let meta = read_sidecar(&path);
+            let entry = Entry {
+                document: Arc::new(document),
+                raw: Arc::new(bytes),
+                etag: meta.get("etag").and_then(Value::as_str).map(str::to_string),
+                last_modified: meta
+                    .get("last_modified")
+                    .and_then(Value::as_str)
+                    .map(str::to_string),
+                source: Source::Disk,
+                fetched_at: meta
+                    .get("fetched_at")
+                    .and_then(Value::as_str)
+                    .and_then(parse_system_time)
+                    .unwrap_or_else(SystemTime::now),
+                refreshed_at: Instant::now(),
+                stale: true,
+            };
+            for key in entry.document.use_cases.keys().cloned().collect::<Vec<_>>() {
+                self.install_key(
+                    &key,
+                    Entry {
+                        document: entry.document.clone(),
+                        raw: entry.raw.clone(),
+                        etag: entry.etag.clone(),
+                        last_modified: entry.last_modified.clone(),
+                        source: entry.source,
+                        fetched_at: entry.fetched_at,
+                        refreshed_at: entry.refreshed_at,
+                        stale: entry.stale,
+                    },
+                );
+            }
         }
     }
 
@@ -125,7 +195,7 @@ impl Store {
             }
         };
 
-        // A partially written or corrupt file is ignored, not an error: the next poll fixes it.
+        // A partially written or corrupt file is ignored, not an error: a later demand fetch fixes it.
         let (document, warnings) = match UseCaseDocument::from_json(&bytes) {
             Ok(decoded) => decoded,
             Err(error) => {
@@ -188,12 +258,45 @@ impl Store {
     }
 
     pub fn current(&self) -> Option<Arc<Entry>> {
-        self.state.lock().ok()?.entry.clone()
+        let state = self.state.lock().ok()?;
+        state
+            .entry
+            .clone()
+            .or_else(|| state.per_key.values().next().cloned())
+    }
+
+    fn current_key(&self, use_case: &str) -> Option<Arc<Entry>> {
+        let state = self.state.lock().ok()?;
+        state.per_key.get(use_case).cloned().or_else(|| {
+            state
+                .entry
+                .clone()
+                .filter(|entry| entry.document.use_cases.contains_key(use_case))
+        })
+    }
+
+    fn current_for_resolve(&self, use_case: &str) -> Option<Arc<Entry>> {
+        let state = self.state.lock().ok()?;
+        state
+            .per_key
+            .get(use_case)
+            .cloned()
+            .or_else(|| state.entry.clone())
     }
 
     fn install(&self, entry: Entry) {
         if let Ok(mut state) = self.state.lock() {
-            state.entry = Some(Arc::new(entry));
+            let entry = Arc::new(entry);
+            for key in entry.document.use_cases.keys() {
+                state.per_key.insert(key.clone(), entry.clone());
+            }
+            state.entry = Some(entry);
+        }
+    }
+
+    fn install_key(&self, use_case: &str, entry: Entry) {
+        if let Ok(mut state) = self.state.lock() {
+            state.per_key.insert(use_case.to_string(), Arc::new(entry));
         }
     }
 
@@ -211,23 +314,18 @@ impl Store {
         });
     }
 
-    /// Resolves against the document in memory, triggering a background refresh when it is older
-    /// than the cache TTL. Never blocks on the network.
+    /// Resolves against the document cached for this use case.
     pub(crate) fn resolve(
         &self,
         use_case: &str,
         options: &ResolveOptions,
     ) -> Result<Resolution, Error> {
-        let entry = self.current().ok_or_else(|| {
+        let entry = self.current_for_resolve(use_case).ok_or_else(|| {
             Error::NotReady(format!(
                 "no snapshot for environment {:?}",
                 self.config.environment
             ))
         })?;
-
-        if entry.refreshed_at.elapsed() >= self.config.cache_ttl {
-            self.wake();
-        }
 
         resolver::resolve(
             &entry.document,
@@ -238,9 +336,23 @@ impl Store {
         )
     }
 
+    /// The prompt names cached for a use case.
+    pub fn prompt_names(&self, use_case: &str) -> Result<Vec<String>, Error> {
+        let entry = self.current_key(use_case).ok_or_else(|| {
+            Error::NotReady(format!(
+                "no snapshot for environment {:?}",
+                self.config.environment
+            ))
+        })?;
+        if !entry.document.use_cases.contains_key(use_case) {
+            return Err(Error::UnknownUseCase(use_case.to_string()));
+        }
+        Ok(entry.document.prompt_names(use_case))
+    }
+
     /// The payload policy the snapshot carries for a use case, when it has one.
     pub fn payload_policy(&self, use_case: &str) -> Option<crate::snapshot::PayloadPolicy> {
-        self.current()?
+        self.current_key(use_case)?
             .document
             .use_cases
             .get(use_case)?
@@ -248,67 +360,108 @@ impl Store {
             .clone()
     }
 
-    /// Wakes the poller so it can refresh now, if its own rate limit allows.
-    pub fn wake(&self) {
-        self.signal.notify_all();
+    /// Fetches the full document once, synchronously, and installs the result. This is the
+    /// explicit "fetch now" path used by scripts and bundle export flows.
+    pub fn refresh_now(&self) -> Result<(), Error> {
+        // Runtime refresh is demand-driven by use_case(key). A no-arg refresh must
+        // not bulk-fetch all prompts.
+        Ok(())
     }
 
-    /// Whether the document in memory is older than the cache TTL and the SDK is allowed to ask
-    /// for a new one right now (no `Retry-After` or backoff still running).
-    pub fn needs_refresh(&self) -> bool {
-        let state = match self.state.lock() {
+    /// Ensures the requested use case has a fresh-enough remote document. This is the runtime
+    /// demand path: it fetches only `/prompts/{key}`, waits at most one second, and falls back to
+    /// the last entry on failure. Concurrent callers for the same key share one request; different
+    /// keys proceed independently.
+    pub fn refresh_key_if_needed(self: &Arc<Self>, use_case: &str) {
+        if !self.config.remote_enabled() {
+            return;
+        }
+
+        let budget = self.config.request_timeout.min(Duration::from_secs(1));
+        let deadline = Instant::now() + budget;
+        let mut state = match self.state.lock() {
             Ok(state) => state,
             Err(poisoned) => poisoned.into_inner(),
         };
-        let now = Instant::now();
-        if state.next_attempt.is_some_and(|next| next > now) {
-            return false;
-        }
-        match &state.entry {
-            None => true,
-            Some(entry) => entry.refreshed_at.elapsed() >= self.config.cache_ttl,
-        }
-    }
 
-    /// Refreshes on a one-shot thread, at most one at a time. This is the stale-while-revalidate
-    /// path for a client running without the background poller: the caller returns immediately
-    /// with the document it already has.
-    pub fn refresh_in_background(store: Arc<Store>) {
-        if store
-            .refreshing
-            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
-            .is_err()
-        {
+        loop {
+            let now = Instant::now();
+            if let Some(entry) = state.per_key.get(use_case).or(state.entry.as_ref()) {
+                if entry.document.use_cases.contains_key(use_case)
+                    && entry.source == Source::Remote
+                    && entry.refreshed_at.elapsed() < self.config.demand_cache_ttl
+                {
+                    return;
+                }
+            }
+
+            if state.inflight.contains_key(use_case) {
+                let remaining = deadline.saturating_duration_since(now);
+                if remaining == Duration::ZERO {
+                    return;
+                }
+                state = match self
+                    .signal
+                    .wait_timeout(state, remaining.min(Duration::from_millis(10)))
+                {
+                    Ok((state, _)) => state,
+                    Err(poisoned) => poisoned.into_inner().0,
+                };
+                continue;
+            }
+
+            if state
+                .next_attempts
+                .get(use_case)
+                .is_some_and(|next| *next > now)
+            {
+                return;
+            }
+
+            let token = self.fetch_tokens.fetch_add(1, Ordering::Relaxed) + 1;
+            state.inflight.insert(use_case.to_string(), token);
+            state
+                .next_attempts
+                .insert(use_case.to_string(), now + self.config.demand_cache_ttl);
+            drop(state);
+
+            let store = self.clone();
+            let key = use_case.to_string();
+            let _ = std::thread::Builder::new()
+                .name("prompton-config-fetch".to_string())
+                .spawn(move || {
+                    let _ = store.fetch_key(&key, deadline);
+                    if let Ok(mut state) = store.state.lock() {
+                        if state.inflight.get(&key).copied() == Some(token) {
+                            state.inflight.remove(&key);
+                        }
+                    }
+                    store.signal.notify_all();
+                });
+
+            state = match self.state.lock() {
+                Ok(state) => state,
+                Err(poisoned) => poisoned.into_inner(),
+            };
+            while state.inflight.contains_key(use_case) {
+                let now = Instant::now();
+                let remaining = deadline.saturating_duration_since(now);
+                if remaining == Duration::ZERO {
+                    return;
+                }
+                state = match self
+                    .signal
+                    .wait_timeout(state, remaining.min(Duration::from_millis(10)))
+                {
+                    Ok((state, _)) => state,
+                    Err(poisoned) => poisoned.into_inner().0,
+                };
+            }
             return;
         }
-        let spawned = std::thread::Builder::new()
-            .name("prompton-refresh".to_string())
-            .spawn(move || {
-                let _ = store.fetch();
-                store.refreshing.store(false, Ordering::Release);
-            });
-        if spawned.is_err() {
-            // The thread could not start: leave the flag clear so the next resolve tries again.
-        }
     }
 
-    /// Fetches once, synchronously, and installs the result. This is the "fetch now" scripts want;
-    /// everything else refreshes in the background.
-    pub fn refresh_now(&self) -> Result<(), Error> {
-        if !self.config.remote_enabled() {
-            return Err(Error::RemoteDisabled(format!(
-                "mode is {:?} and api_key is {}",
-                self.config.mode,
-                if self.config.api_key.is_some() {
-                    "set"
-                } else {
-                    "unset"
-                }
-            )));
-        }
-        self.fetch()
-    }
-
+    #[allow(dead_code)]
     fn fetch(&self) -> Result<(), Error> {
         let etag = self.current().and_then(|entry| entry.etag.clone());
         self.fetches.fetch_add(1, Ordering::Relaxed);
@@ -386,12 +539,123 @@ impl Store {
         }
     }
 
+    fn fetch_key(&self, use_case: &str, deadline: Instant) -> Result<(), Error> {
+        let etag = self.current_key(use_case).and_then(|entry| {
+            if entry.document.use_cases.contains_key(use_case) {
+                entry.etag.clone()
+            } else {
+                None
+            }
+        });
+        self.fetches.fetch_add(1, Ordering::Relaxed);
+
+        match self
+            .api
+            .prompt_snapshot(use_case, &self.config.environment, etag.as_deref())
+        {
+            Ok(UseCaseFetch::NotModified {
+                etag,
+                last_modified,
+            }) => {
+                if Instant::now() > deadline {
+                    self.record_key_failure(use_case, None);
+                    return Err(Error::Transport(
+                        "config fetch exceeded the 1s budget".to_string(),
+                    ));
+                }
+                if let Some(entry) = self.current_key(use_case) {
+                    self.confirm_key(use_case, &entry, etag, last_modified);
+                    Ok(())
+                } else {
+                    self.record_key_failure(use_case, None);
+                    Err(Error::NotReady(format!(
+                        "config fetch for {use_case:?} returned 304 without a cached document"
+                    )))
+                }
+            }
+            Ok(UseCaseFetch::Fetched {
+                body,
+                etag,
+                last_modified,
+            }) => {
+                let (document, warnings) = match UseCaseDocument::from_json(&body) {
+                    Ok(decoded) => decoded,
+                    Err(error) => {
+                        self.record_key_failure(use_case, None);
+                        self.logger.say(format!(
+                            "config fetch for {use_case} returned an unusable document: {error}"
+                        ));
+                        return Err(Error::Decode(error));
+                    }
+                };
+                for warning in warnings {
+                    self.logger
+                        .say_once(&warning, format!("snapshot: {warning}"));
+                }
+                if let Err(reason) = self.accept(&document) {
+                    self.record_key_failure(use_case, None);
+                    self.logger
+                        .say(format!("refusing the fetched snapshot: {reason}"));
+                    return Err(Error::Config(reason));
+                }
+                if !document.use_cases.contains_key(use_case) {
+                    self.record_key_failure(use_case, None);
+                    return Err(Error::Config(format!(
+                        "config fetch for {use_case:?} returned another use case"
+                    )));
+                }
+                if Instant::now() > deadline {
+                    self.record_key_failure(use_case, None);
+                    return Err(Error::Transport(
+                        "config fetch exceeded the 1s budget".to_string(),
+                    ));
+                }
+
+                let entry = Entry {
+                    document: Arc::new(document),
+                    raw: Arc::new(body),
+                    etag: etag.clone(),
+                    last_modified: last_modified.clone(),
+                    source: Source::Remote,
+                    fetched_at: SystemTime::now(),
+                    refreshed_at: Instant::now(),
+                    stale: false,
+                };
+                let raw = entry.raw.clone();
+                self.install_key(use_case, entry);
+                self.write_key_disk_cache(
+                    use_case,
+                    &raw,
+                    etag.as_deref(),
+                    last_modified.as_deref(),
+                );
+                if let Ok(mut state) = self.state.lock() {
+                    state.failures = 0;
+                    state.next_attempts.remove(use_case);
+                }
+                Ok(())
+            }
+            Err(failure) => {
+                self.record_key_failure(
+                    use_case,
+                    Some(self.config.demand_cache_ttl).or(failure.retry_after),
+                );
+                self.logger.say(format!(
+                    "config fetch for {use_case} failed ({}); serving the cached document if present",
+                    failure.error
+                ));
+                Err(failure.error)
+            }
+        }
+    }
+
+    #[allow(dead_code)]
     fn confirm(&self, etag: Option<String>, last_modified: Option<String>) {
         if let Ok(mut state) = self.state.lock() {
             state.failures = 0;
             state.next_attempt = None;
             if let Some(entry) = &state.entry {
-                state.entry = Some(Arc::new(Entry {
+                let fresh = Arc::new(Entry {
                     document: entry.document.clone(),
                     raw: entry.raw.clone(),
                     etag: etag.or_else(|| entry.etag.clone()),
@@ -402,11 +666,41 @@ impl Store {
                     fetched_at: SystemTime::now(),
                     refreshed_at: Instant::now(),
                     stale: false,
-                }));
+                });
+                for key in fresh.document.use_cases.keys() {
+                    state.per_key.insert(key.clone(), fresh.clone());
+                }
+                state.entry = Some(fresh);
             }
         }
     }
 
+    fn confirm_key(
+        &self,
+        use_case: &str,
+        entry: &Arc<Entry>,
+        etag: Option<String>,
+        last_modified: Option<String>,
+    ) {
+        if let Ok(mut state) = self.state.lock() {
+            state.next_attempts.remove(use_case);
+            state.per_key.insert(
+                use_case.to_string(),
+                Arc::new(Entry {
+                    document: entry.document.clone(),
+                    raw: entry.raw.clone(),
+                    etag: etag.or_else(|| entry.etag.clone()),
+                    last_modified: last_modified.or_else(|| entry.last_modified.clone()),
+                    source: Source::Remote,
+                    fetched_at: SystemTime::now(),
+                    refreshed_at: Instant::now(),
+                    stale: false,
+                }),
+            );
+        }
+    }
+
+    #[allow(dead_code)]
     fn record_failure(&self, retry_after: Option<Duration>) {
         if let Ok(mut state) = self.state.lock() {
             state.failures = state.failures.saturating_add(1);
@@ -430,6 +724,35 @@ impl Store {
         }
     }
 
+    fn record_key_failure(&self, use_case: &str, retry_after: Option<Duration>) {
+        if let Ok(mut state) = self.state.lock() {
+            state.failures = state.failures.saturating_add(1);
+            if !state.next_attempts.contains_key(use_case) {
+                let wait = retry_after.unwrap_or(self.config.demand_cache_ttl);
+                state
+                    .next_attempts
+                    .insert(use_case.to_string(), Instant::now() + wait);
+            }
+            if let Some(entry) = state.per_key.get(use_case).cloned() {
+                if !entry.stale {
+                    state.per_key.insert(
+                        use_case.to_string(),
+                        Arc::new(Entry {
+                            document: entry.document.clone(),
+                            raw: entry.raw.clone(),
+                            etag: entry.etag.clone(),
+                            last_modified: entry.last_modified.clone(),
+                            source: entry.source,
+                            fetched_at: entry.fetched_at,
+                            refreshed_at: entry.refreshed_at,
+                            stale: true,
+                        }),
+                    );
+                }
+            }
+        }
+    }
+
     /// How many times the store has asked the server for a snapshot (tests assert on this).
     pub fn fetch_count(&self) -> u64 {
         self.fetches.load(Ordering::Relaxed)
@@ -440,7 +763,11 @@ impl Store {
             Ok(state) => state,
             Err(poisoned) => poisoned.into_inner(),
         };
-        match &state.entry {
+        let entry = state
+            .entry
+            .as_ref()
+            .or_else(|| state.per_key.values().next());
+        match entry {
             None => UseCaseDocumentInfo {
                 source: None,
                 etag: None,
@@ -488,6 +815,43 @@ impl Store {
         Ok(())
     }
 
+    fn write_key_disk_cache(
+        &self,
+        use_case: &str,
+        body: &[u8],
+        etag: Option<&str>,
+        last_modified: Option<&str>,
+    ) {
+        let full_path = match self.config.disk_cache_path() {
+            Some(path) => path,
+            None => return,
+        };
+        let path = key_cache_path(&full_path, use_case);
+        let document_environment = Some(self.config.environment.as_str());
+        let result = write_atomically(&path, body).and_then(|()| {
+            write_atomically(
+                &sidecar_path(&path),
+                sidecar_json(
+                    etag,
+                    last_modified,
+                    document_environment,
+                    self.config.project.as_deref(),
+                )
+                .as_bytes(),
+            )
+        });
+        if let Err(error) = result {
+            self.logger.say_once(
+                "prompt-disk-cache-write",
+                format!(
+                    "could not write the prompt disk cache {}: {error}",
+                    path.display()
+                ),
+            );
+        }
+    }
+
+    #[allow(dead_code)]
     fn write_disk_cache(&self, body: &[u8], etag: Option<&str>, last_modified: Option<&str>) {
         let path = match self.config.disk_cache_path() {
             Some(path) => path,
@@ -514,7 +878,7 @@ impl Store {
         }
     }
 
-    /// Stops the poller.
+    /// Stops any legacy poller thread and wakes waiters.
     pub fn stop(&self) {
         if let Ok(mut state) = self.state.lock() {
             state.stop = true;
@@ -522,8 +886,8 @@ impl Store {
         self.signal.notify_all();
     }
 
-    /// The poll loop: refresh when the TTL has passed, wait out backoff and `Retry-After`, and
-    /// never let a failure escape.
+    /// Legacy poll loop for callers that explicitly opt into background polling.
+    #[allow(dead_code)]
     pub fn run_poller(store: Arc<Store>) {
         loop {
             let state = match store.state.lock() {
@@ -564,12 +928,32 @@ impl Store {
 }
 
 /// `cache_ttl × 2^(failures-1)`, capped at five minutes.
+#[allow(dead_code)]
 pub(crate) fn backoff(base: Duration, failures: u32) -> Duration {
     let exponent = failures.saturating_sub(1).min(20);
     let factor = 1u32 << exponent.min(20);
     base.checked_mul(factor)
         .unwrap_or(MAX_BACKOFF)
         .min(MAX_BACKOFF)
+}
+
+fn key_cache_dir(path: &Path) -> PathBuf {
+    let mut name = path.as_os_str().to_os_string();
+    name.push(".prompts");
+    PathBuf::from(name)
+}
+
+fn key_cache_path(path: &Path, key: &str) -> PathBuf {
+    let encoded = key
+        .as_bytes()
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect::<String>();
+    key_cache_dir(path).join(format!("{encoded}.json"))
+}
+
+fn parse_system_time(_value: &str) -> Option<SystemTime> {
+    None
 }
 
 fn sidecar_path(path: &Path) -> PathBuf {

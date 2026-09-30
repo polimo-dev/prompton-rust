@@ -26,7 +26,7 @@
 //!
 //! | when | what happens |
 //! |---|---|
-//! | a poll times out, 5xx or 429 | the previous use-case document keeps serving; the caller sees nothing |
+//! | a demand fetch times out, 5xx or 429 | the previous use-case document keeps serving; the caller sees nothing |
 //! | PromptOn is down at start | the disk cache, then the bundle, answer `use_case` |
 //! | nothing is cached anywhere | `use_case` returns [`Error::NotReady`] — the only error worth retrying |
 //! | the use case has no live deployment | [`Error::Unresolved`] — a bug in the deployment, never a reason to use a hard-coded prompt |
@@ -227,17 +227,14 @@ impl Client {
                 // A cold start with nothing cached: fetch once, then never block again.
                 if let Err(error) = store.refresh_now() {
                     logger.say(format!(
-                        "the first use-case document fetch failed ({error}); serving what is cached and retrying in the background"
+                        "the first use-case document fetch failed ({error}); serving what is cached until a later demand fetch"
                     ));
                 }
             }
             if config.poll {
-                let poller = store.clone();
-                threads.push(
-                    std::thread::Builder::new()
-                        .name("prompton-poller".to_string())
-                        .spawn(move || Store::run_poller(poller))
-                        .map_err(Error::Io)?,
+                logger.say_once(
+                    "poll-disabled",
+                    "poll(true) is ignored; runtime config refresh is demand-driven per key",
                 );
             }
             let worker = buffer.clone();
@@ -277,35 +274,21 @@ impl Client {
 
     /// Reads a use case, picking a prompt by name.
     ///
-    /// This never touches the network: it reads the use-case document in memory. When that document is
-    /// older than `cache_ttl` a refresh is triggered — on the background poller, or on a one-shot
-    /// thread when the poller is off — and this call returns the document it already has.
+    /// In live mode this gives the requested key one bounded chance to refresh when its cache is
+    /// missing or stale. If that fetch fails or times out, the last cached value is used.
     pub fn use_case_with(&self, key: &str, options: &UseCaseOptions) -> SdkResult<UseCase> {
         let options = ResolveOptions {
             prompt: options.prompt.clone(),
         };
+        self.inner.store.refresh_key_if_needed(key);
         let resolution = self.inner.store.resolve(key, &options);
-        if !self.inner.config.poll
-            && self.inner.config.remote_enabled()
-            && self.inner.store.needs_refresh()
-        {
-            Store::refresh_in_background(self.inner.store.clone());
-        }
         resolution.map(|resolution| UseCase::from_resolution(self.clone(), resolution))
     }
 
     /// The prompt names the live deployment pins, sorted.
     pub fn prompt_names(&self, use_case: &str) -> SdkResult<Vec<String>> {
-        let entry = self.inner.store.current().ok_or_else(|| {
-            Error::NotReady(format!(
-                "no use-case document for environment {:?}",
-                self.inner.config.environment
-            ))
-        })?;
-        if !entry.document.use_cases.contains_key(use_case) {
-            return Err(Error::UnknownUseCase(use_case.to_string()));
-        }
-        Ok(entry.document.prompt_names(use_case))
+        self.inner.store.refresh_key_if_needed(use_case);
+        self.inner.store.prompt_names(use_case)
     }
 
     /// What the store currently holds: source, ETag, age and whether it is stale.
@@ -313,8 +296,9 @@ impl Client {
         self.inner.store.info()
     }
 
-    /// Fetches the use-case document once, synchronously. For scripts and cold starts; the background
-    /// poller does this on its own every `cache_ttl`.
+    /// Compatibility no-op. Runtime lookup refreshes only the requested key through
+    /// [`Client::use_case`]; bundle tooling should call [`Client::export_use_cases`] after the
+    /// wanted keys have been cached.
     pub fn refresh(&self) -> SdkResult<()> {
         self.inner.store.refresh_now()
     }

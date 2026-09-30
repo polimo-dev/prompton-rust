@@ -51,11 +51,10 @@ and on an inline prompt document if it is not.
 
 ### Using it from an async runtime
 
-`use_case`, `messages`, `text`, `log` and `UseCase::track` (around your own async-free closure) do **no**
-network I/O of their own: they read memory and queue work, so they are safe to call straight from an
-async task. `flush`, `refresh`, `prompt_remote` and `export_use_cases` block, so call them from
-`tokio::task::spawn_blocking` or on a thread of your own. Polling and sending happen on the SDK's
-own two threads and never touch your runtime.
+`use_case` may perform a 1-second bounded config fetch when that key is missing or stale.
+`messages`, `text`, `log` and `UseCase::track` do no network I/O of their own: they read memory and
+queue work. Call `use_case`, `flush`, `refresh`, `prompt_remote` and `export_use_cases` from
+`tokio::task::spawn_blocking` or on a thread of your own when you are inside an async runtime.
 
 ## Configuration
 
@@ -68,13 +67,13 @@ Every option follows **explicit option > environment variable > default**.
 | `.api_key(key)` | `PTN_API_KEY` | none | `ptn_<project_slug>_…`. Without it the SDK makes **no** remote calls and serves the disk cache and bundle only, saying so once |
 | `.environment(name)` | `PTN_ENVIRONMENT` | `production` | Which environment this process reads |
 | `.project(slug)` | `PTN_PROJECT` | from the key | Names the default disk-cache file and guards against another project's prompt document |
-| `.cache_ttl(duration)` | — | 10 s | How long a prompt document is served from memory before a refresh; also the base of the failure backoff |
-| `.request_timeout(duration)` | — | 5 s | Per-request timeout |
+| `.cache_ttl(duration)` | — | 10 s | Legacy full-document and remote prompt cache TTL. Runtime config fetch freshness and attempt gates are fixed at 10s by the SDK contract |
+| `.request_timeout(duration)` | — | 5 s | Per-request timeout; runtime config fetches are also capped at 1 second |
 | `.disk_cache_path(path)` / `.without_disk_cache()` | — | OS cache dir | `<cache>/prompton/<project>.<environment>.use-cases.json`, written atomically with a `.meta.json` sidecar |
 | `.bundle(path)` | — | none | A prompt document shipped inside the app, used when memory and disk are empty |
 | `.mode(Mode::Live \| Offline \| Test)` | — | `Live` | `Offline` never touches the network; `Test` also captures records in memory |
-| `.poll(bool)` | — | `true` | The background poller. With it off, a refresh is triggered by the next `use_case` call after the TTL |
-| `.fetch_on_start(bool)` | — | `true` | A cold start with nothing cached fetches once, synchronously, before `build()` returns |
+| `.poll(bool)` | — | `false` | Legacy switch retained for compatibility; ignored because runtime config refresh is demand-driven by `use_case` |
+| `.fetch_on_start(bool)` | — | `false` | Whether a cold start with nothing cached fetches once before `build()` returns |
 | `.log_config(LogConfig { … })` | — | 2 s / 100 records / 1 MB / 10 000 queued / 8 attempts | The monitoring-log buffer's triggers and limits |
 | `.payload_defaults(policy)` | — | `full`, 1.0, 256 KB | The payload policy for a use case whose document entry carries none |
 | `.hash_end_user(bool)` | — | `false` | Send `sha256(end_user_ref)` instead of the raw reference |
@@ -87,24 +86,23 @@ Every option follows **explicit option > environment variable > default**.
 The single most important behaviour of this SDK: **a model call never fails because PromptOn did.**
 Configuration goes stale in the worst case, never absent.
 
-- **Poll, do not fetch per request.** `GET /prompts` with `If-None-Match` every 10 seconds by
-  default. A `304` costs nothing, so a short interval is cheap. Every `use_case` inside the TTL is
-  answered from memory with no HTTP call at all.
-- **Refresh in the background.** A refresh never blocks a model call, and while one is in flight —
-  or after it fails — the previous document keeps serving.
-- **Rate limits and failures.** On `429` the SDK waits out `Retry-After` (falling back to
-  `error.details.retry_after`, then to backoff) and does not contact the server before it has
-  elapsed. On `5xx`, timeouts and transport failures it backs off exponentially, ×2 from the cache
-  TTL up to five minutes. The caller sees none of this.
-- **Three tiers, in order: memory → disk → bundle → remote.** The disk cache is written atomically
+- **Fetch on demand.** Startup and idle clients do not contact PromptOn. `Client::use_case(key)` is
+  the runtime config boundary. When that key is missing or stale, the SDK sends one conditional
+  `GET /api/v1/prompts/{key}?environment=...` request. Within the 10-second freshness window it
+  serves memory with no HTTP call.
+- **Rate limit and fallback.** Each key has a 10-second attempt gate, measured from attempt start.
+  Same-key concurrent callers share the in-flight request. Runtime config fetch has a 1-second
+  total budget and no retry. A custom `HttpClient` is called once; the SDK-level outer budget still makes `use_case` fall back after 1 second even if that transport ignores its timeout. On transport errors, `429`, `5xx`, invalid payloads, scope mismatch,
+  or timeout, the SDK serves the last valid value for that key, even when expired. If none exists,
+  `use_case` returns `Error::NotReady`.
+- **Three tiers, in order: memory → disk → bundle → remote on demand.** The disk cache is written atomically
   (temp file, then rename) with a sidecar holding the ETag and `Last-Modified`; several processes
   on one host may share it, a reader tolerates a concurrent rename, and a corrupt or partial file is
   ignored rather than fatal. The bundle is a prompt document committed into the repository
   (`client.export_use_cases("use-cases.production.json")`, refreshed by your build) — in a serverless
   or scale-to-zero runtime it is the primary cold-start fallback, not a nicety.
 - **No external services, ever.** No database, no Redis, no shared store: memory, one local file and
-  the bundled file are the only tiers. Instances never coordinate; each keeps its own copy, which
-  ETag polling makes cheap.
+  the bundled file are the only tiers. Instances never coordinate; each keeps its own copy.
 - **The environment and project guards.** A prompt document for another environment or another project is
   never used, wherever it came from — a `staging` process must not boot on a `production` bundle.
 - **Monitoring logs never block a model call.** They are batched, retried, bounded, and dropped with
@@ -117,8 +115,8 @@ that logs still happen on the cached prompt document.
 
 | when | what you see |
 |---|---|
-| a poll times out, or answers `5xx` or `429` | nothing: the previous prompt document keeps serving, and the SDK says so on its log sink |
-| PromptOn is down at start | the disk cache, then the bundle, answer `use_case`; `source` records which |
+| a demand fetch times out, or answers `5xx` or `429` | the previous prompt document keeps serving, and the SDK says so on its log sink |
+| PromptOn is down on first demand fetch | the disk cache, then the bundle, answer `use_case`; `source` records which |
 | nothing is cached anywhere | `Error::NotReady` — the only error worth retrying |
 | the use case is not in the prompt document | `Error::UnknownUseCase` |
 | the use case has no live deployment here | `Error::Unresolved` — a bug in the deployment, **never** a reason to fall back to a hard-coded prompt |

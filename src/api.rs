@@ -98,12 +98,38 @@ pub(crate) struct Api {
 }
 
 impl Api {
+    #[allow(dead_code)]
     pub fn snapshot(
         &self,
         environment: &str,
         etag: Option<&str>,
     ) -> Result<UseCaseFetch, RemoteFailure> {
+        self.snapshot_path("/prompts".to_string(), environment, etag, self.timeout)
+    }
+
+    pub fn prompt_snapshot(
+        &self,
+        use_case: &str,
+        environment: &str,
+        etag: Option<&str>,
+    ) -> Result<UseCaseFetch, RemoteFailure> {
+        self.snapshot_path(
+            format!("/prompts/{}", encode(use_case)),
+            environment,
+            etag,
+            self.timeout.min(Duration::from_secs(1)),
+        )
+    }
+
+    fn snapshot_path(
+        &self,
+        path: String,
+        environment: &str,
+        etag: Option<&str>,
+        timeout: Duration,
+    ) -> Result<UseCaseFetch, RemoteFailure> {
         let mut headers = self.headers(false);
+        headers.push(("connection".to_string(), "close".to_string()));
         if let Some(etag) = etag {
             headers.push(("if-none-match".to_string(), etag.to_string()));
         }
@@ -111,13 +137,14 @@ impl Api {
         let response = self.send(HttpRequest {
             method: Method::Get,
             url: format!(
-                "{}/prompts?environment={}",
+                "{}{}?environment={}",
                 self.base_url,
+                path,
                 encode(environment)
             ),
             headers,
             body: None,
-            timeout: self.timeout,
+            timeout,
         })?;
 
         let etag = response.header("etag").map(str::to_string);
@@ -275,7 +302,7 @@ fn events_ack_from_value(value: Value) -> Option<LogsAck> {
     value
         .get("events")
         .cloned()
-        .or_else(|| Some(value))
+        .or(Some(value))
         .and_then(logs_ack_from_value)
 }
 

@@ -4,6 +4,17 @@ All notable changes to `prompton-sdk` are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the crate follows
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## 0.5.0
+
+- Runtime prompt configuration is now demand-driven: `Client::use_case` fetches only
+  `GET /api/v1/prompts/{key}?environment=...` when that key is missing or stale.
+- Startup and idle clients no longer fetch or poll configuration by default. Disk and bundle
+  loading remain local-only fallback tiers.
+- Config fetches are cached and rate-limited for 10 seconds, share an in-flight same-key request,
+  use a 1-second fetch budget, and do not retry. Failures keep serving the last valid value, even
+  when expired.
+- `Client::refresh` is now a compatibility no-op for runtime clients; normal lookup never falls back to the bulk endpoint. Runtime key fetches persist immutable per-key disk snapshots for restart fallback.
+
 ## 0.4.1
 
 - Patch runtime HTTP compatibility with the current server: SDK fetches use `GET /api/v1/prompts`, remote rendering uses `POST /api/v1/prompts/{key}/render`, and monitoring logs send `prompt_key`.
@@ -48,7 +59,7 @@ The first release of the PromptOn SDK for Rust. It reads snapshot schema version
   `Client::from_env()` or `Client::builder()`, with the precedence explicit option > environment
   variable > default.
 - **Use-case document store** with three tiers — memory, an atomically written disk cache with an
-  ETag/`Last-Modified` sidecar, and a bundle committed into the app — a 10-second memory cache, a
+  ETag/`Last-Modified` sidecar, per-key runtime disk snapshots, and a bundle committed into the app — a 10-second memory cache, a
   background poller that refreshes with `If-None-Match`, `Retry-After` on `429`, and exponential
   backoff (×2 from the cache TTL, capped at five minutes) on `5xx`, timeouts and transport
   failures. A refresh never blocks or fails a model call, and a document for another environment
