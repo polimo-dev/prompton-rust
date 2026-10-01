@@ -71,7 +71,7 @@ impl Kind {
 pub struct Message {
     /// `system`, `user`, `assistant`, …
     pub role: String,
-    /// Slot messages splice a variable containing native provider messages.
+    /// Provider-native message `type`. The retired `slot` marker is rejected when rendered.
     pub message_type: Option<String>,
     /// The message text — a Liquid template before rendering, the final text after.
     pub content: String,
@@ -121,7 +121,12 @@ impl Serialize for Message {
         let mut len = self.extra.len();
         len += usize::from(self.message_type.is_some());
         len += usize::from(!self.role.is_empty());
-        len += usize::from(self.content_present || self.message_type.as_deref() != Some("slot"));
+        len += usize::from(
+            self.content_present
+                || !self.content.is_empty()
+                || self.message_type.is_some()
+                || !self.role.is_empty(),
+        );
         len += usize::from(self.name.is_some());
         len += usize::from(self.tool_call_id.is_some());
         len += usize::from(!self.tool_calls.is_empty());
@@ -135,7 +140,11 @@ impl Serialize for Message {
         if !self.role.is_empty() {
             map.serialize_entry("role", &self.role)?;
         }
-        if self.content_present || self.message_type.as_deref() != Some("slot") {
+        if self.content_present
+            || !self.content.is_empty()
+            || self.message_type.is_some()
+            || !self.role.is_empty()
+        {
             map.serialize_entry("content", &self.content_json())?;
         }
         if let Some(name) = &self.name {

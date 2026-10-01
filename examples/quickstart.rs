@@ -51,9 +51,11 @@ fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
         call.source.as_str()
     );
 
-    // 2. Render the pinned prompt with this call's variables.
+    // 2. Render PromptOn-managed messages, then append app-owned conversation turns.
     let variables = json!({"name": "Ada"});
-    let messages = call.messages(variables.clone())?;
+    let mut messages = call.messages(variables.clone())?;
+    messages.extend(app_history());
+    messages.push(Message::new("user", "Please greet Ada."));
     for message in &messages {
         println!("  [{}] {}", message.role, message.content);
     }
@@ -104,6 +106,10 @@ fn fake_provider(model: &str, messages: &[Message]) -> (String, (i64, i64)) {
         .join(" ");
     let words = prompt.split_whitespace().count() as i64;
     (format!("Hello! (pretending to be {model})"), (words, 8))
+}
+
+fn app_history() -> Vec<Message> {
+    vec![Message::new("user", "My name is Ada.")]
 }
 
 /// The use-case document an app would normally fetch from PromptOn, inline so the example runs anywhere.

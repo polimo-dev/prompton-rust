@@ -478,6 +478,44 @@ fn the_wrapper_times_the_call_and_returns_what_the_closure_returned() {
 }
 
 #[test]
+fn track_logs_app_composed_chat_messages() {
+    let client = Client::builder()
+        .mode(Mode::Test)
+        .environment("production")
+        .without_disk_cache()
+        .log_sink(|_| {})
+        .build()
+        .unwrap();
+    client.set_use_cases(&support::greeting_document()).unwrap();
+    let resolution = client.use_case("greeting").unwrap();
+    let mut final_messages = resolution.messages(json!({"name": "Ada"})).unwrap();
+    final_messages.push(Message::new("user", "Earlier app-owned turn"));
+    final_messages.push(Message::new("user", "What should I do next?"));
+
+    resolution
+        .track(
+            CallMeta::new()
+                .variables(json!({"name": "Ada"}))
+                .input_messages(final_messages.clone()),
+            || {
+                Ok(Completion::new(
+                    "Use the app-composed messages.",
+                    Result::text("Use the app-composed messages."),
+                ))
+            },
+        )
+        .unwrap();
+
+    let logged = client.captured_logs();
+    let messages = logged[0]["input"]["messages"].as_array().unwrap();
+    assert_eq!(messages.len(), final_messages.len());
+    assert_eq!(
+        messages.last().unwrap()["content"],
+        "What should I do next?"
+    );
+}
+
+#[test]
 fn a_failed_call_is_logged_with_its_usage_and_the_error_propagates() {
     let client = Client::builder()
         .mode(Mode::Test)

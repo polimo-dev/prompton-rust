@@ -4,6 +4,13 @@ All notable changes to `prompton-sdk` are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the crate follows
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## Unreleased
+
+- Retires message-slot expansion. A deployed message with `type: "slot"` now fails with
+  `Message slots are not supported; compose conversation history in app code.`
+- Documents the app-owned chat flow: render PromptOn-managed messages, append application chat
+  history and the current user message, call the provider, and log that final message list.
+
 ## 0.5.0
 
 - Runtime prompt configuration is now demand-driven: `Client::use_case` fetches only

@@ -28,6 +28,13 @@ prompton-sdk = { git = "https://github.com/polimo-dev/prompton-rust", branch = "
 Once it is published, the line becomes `prompton-sdk = "0.4"`. The crate is `prompton-sdk`; the
 library you import is `prompton`. Rust 1.85 or newer.
 
+## Message ownership
+
+PromptOn returns the messages authored in the PromptOn editor, usually the system and policy
+prompt. Your app owns the conversation: append stored chat history and the current user message
+before calling the provider, then pass that final message list to `track` so monitoring shows what
+the provider actually saw.
+
 ## Quick start
 
 ```rust
@@ -35,7 +42,9 @@ use prompton::{CallMeta, Client, Completion, Result};
 
 let prompton = Client::from_env()?;                                  // PTN_HOST, PTN_API_KEY
 let use_case = prompton.use_case("greeting")?;                        // model, params, prompt
-let messages = use_case.messages(serde_json::json!({"name": "Ada"}))?;
+let mut messages = use_case.messages(serde_json::json!({"name": "Ada"}))?;
+messages.extend(load_chat_history("user-42")?);
+messages.push(prompton::Message::new("user", "Please greet Ada."));
 let answer = use_case.track(CallMeta::new().input_messages(messages.clone()), || {
     let text = my_provider.chat(&use_case.model, &messages);          // your key, your client
     Ok(Completion::new(text.clone(), Result::text(text).with_finish_reason("stop")))

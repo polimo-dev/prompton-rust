@@ -176,23 +176,10 @@ pub fn render_messages(
     let mut out = Vec::new();
     for message in messages {
         if message.message_type.as_deref() == Some("slot") {
-            let name = message.name.as_deref().unwrap_or("");
-            let value = vars
-                .as_map()
-                .get(name)
-                .ok_or_else(|| TemplateError::MissingVariable(name.to_string()))?;
-            let Value::Array(items) = value else {
-                return Err(TemplateError::Render(format!(
-                    "message slot {name} must be a list"
-                )));
-            };
-            for item in items {
-                let message = serde_json::from_value::<crate::snapshot::Message>(item.clone())
-                    .map_err(|_| {
-                        TemplateError::Render(format!("message slot {name} must contain objects"))
-                    })?;
-                out.push(message);
-            }
+            return Err(TemplateError::Render(
+                "Message slots are not supported; compose conversation history in app code."
+                    .to_string(),
+            ));
         } else if let Some(Value::String(content)) = &message.content_value {
             let mut rendered = message.clone();
             rendered.content = render(content, vars, engine)?;
@@ -1522,7 +1509,7 @@ mod tests {
     }
 
     #[test]
-    fn message_slots_require_variable_lists() {
+    fn message_slots_are_rejected_for_raw_and_liquid_engines() {
         let messages = vec![crate::snapshot::Message {
             role: String::new(),
             message_type: Some("slot".to_string()),
@@ -1534,16 +1521,56 @@ mod tests {
             tool_calls: Vec::new(),
             extra: serde_json::Map::new(),
         }];
-        assert_eq!(
-            render_messages(&messages, &Vars::from(json!({})), Engine::Liquid).unwrap_err(),
-            TemplateError::MissingVariable("history".to_string())
-        );
-        assert!(render_messages(
+        for engine in [Engine::Liquid, Engine::Raw] {
+            assert_eq!(
+                render_messages(
+                    &messages,
+                    &Vars::from(json!({"history":[{"role":"user","content":"before"}]})),
+                    engine
+                )
+                .unwrap_err(),
+                TemplateError::Render(
+                    "Message slots are not supported; compose conversation history in app code."
+                        .to_string()
+                )
+            );
+        }
+    }
+
+    #[test]
+    fn ordinary_history_variables_and_native_messages_still_render() {
+        let messages = vec![
+            serde_json::from_value::<crate::snapshot::Message>(
+                json!({"role":"system","content":"Hi {{ name }} {{ history }}"}),
+            )
+            .unwrap(),
+            serde_json::from_value::<crate::snapshot::Message>(json!({
+                "role":"assistant",
+                "content": null,
+                "tool_calls": [{"id":"call_1","type":"function","function":{"name":"search","arguments":"{}"}}],
+                "reasoning": {"kept": true}
+            }))
+            .unwrap(),
+            serde_json::from_value::<crate::snapshot::Message>(json!({
+                "role":"tool",
+                "tool_call_id":"call_1",
+                "content":[{"type":"text","text":"found"}]
+            }))
+            .unwrap(),
+        ];
+
+        let rendered = render_messages(
             &messages,
-            &Vars::from(json!({"history":"bad"})),
-            Engine::Liquid
+            &Vars::from(json!({"name":"Ada","history":"summary"})),
+            Engine::Liquid,
         )
-        .is_err());
+        .unwrap();
+
+        assert_eq!(rendered[0].content, "Hi Ada summary");
+        assert_eq!(rendered[1].content_json(), Value::Null);
+        assert_eq!(rendered[1].tool_calls.len(), 1);
+        assert!(rendered[1].extra.contains_key("reasoning"));
+        assert!(rendered[2].content_json().is_array());
     }
 
     #[test]
