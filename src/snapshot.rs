@@ -121,12 +121,7 @@ impl Serialize for Message {
         let mut len = self.extra.len();
         len += usize::from(self.message_type.is_some());
         len += usize::from(!self.role.is_empty());
-        len += usize::from(
-            self.content_present
-                || !self.content.is_empty()
-                || self.message_type.is_some()
-                || !self.role.is_empty(),
-        );
+        len += usize::from(self.content_present || !self.content.is_empty());
         len += usize::from(self.name.is_some());
         len += usize::from(self.tool_call_id.is_some());
         len += usize::from(!self.tool_calls.is_empty());
@@ -140,11 +135,7 @@ impl Serialize for Message {
         if !self.role.is_empty() {
             map.serialize_entry("role", &self.role)?;
         }
-        if self.content_present
-            || !self.content.is_empty()
-            || self.message_type.is_some()
-            || !self.role.is_empty()
-        {
+        if self.content_present || !self.content.is_empty() {
             map.serialize_entry("content", &self.content_json())?;
         }
         if let Some(name) = &self.name {

@@ -25,7 +25,7 @@ The crate is not on crates.io yet, so depend on the repository:
 prompton-sdk = { git = "https://github.com/polimo-dev/prompton-rust", branch = "main" }
 ```
 
-Once it is published, the line becomes `prompton-sdk = "0.4"`. The crate is `prompton-sdk`; the
+Once it is published, the line becomes `prompton-sdk = "0.5"`. The crate is `prompton-sdk`; the
 library you import is `prompton`. Rust 1.85 or newer.
 
 ## Message ownership

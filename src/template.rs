@@ -185,7 +185,7 @@ pub fn render_messages(
             rendered.content = render(content, vars, engine)?;
             rendered.content_value = Some(Value::String(rendered.content.clone()));
             out.push(rendered);
-        } else if message.content_value.is_none() {
+        } else if !message.content_present && !message.content.is_empty() {
             let mut rendered = message.clone();
             rendered.content = render(&message.content, vars, engine)?;
             rendered.content_value = Some(Value::String(rendered.content.clone()));

@@ -516,6 +516,51 @@ fn track_logs_app_composed_chat_messages() {
 }
 
 #[test]
+fn track_preserves_native_message_content_presence() {
+    let client = Client::builder()
+        .mode(Mode::Test)
+        .environment("production")
+        .without_disk_cache()
+        .log_sink(|_| {})
+        .build()
+        .unwrap();
+    client.set_use_cases(&support::greeting_document()).unwrap();
+    let resolution = client.use_case("greeting").unwrap();
+    let messages = vec![
+        serde_json::from_value::<Message>(
+            json!({"role":"assistant","type":"native","name":"helper","reasoning":"opaque"}),
+        )
+        .unwrap(),
+        serde_json::from_value::<Message>(json!({"role":"assistant","content":null})).unwrap(),
+        serde_json::from_value::<Message>(json!({"role":"assistant","content":""})).unwrap(),
+        serde_json::from_value::<Message>(json!({"role":"tool","content":[]})).unwrap(),
+    ];
+    assert!(!messages[0].content_present);
+    assert!(messages[0].content.is_empty());
+    let encoded_messages = serde_json::to_value(&messages).unwrap();
+    assert!(
+        encoded_messages[0].get("content").is_none(),
+        "{encoded_messages:?}"
+    );
+
+    resolution
+        .track(CallMeta::new().input_messages(messages), || {
+            Ok(Completion::new("ok", Result::text("ok")))
+        })
+        .unwrap();
+
+    let logged = client.captured_logs();
+    let messages = logged[0]["input"]["messages"].as_array().unwrap();
+    assert!(messages[0].get("content").is_none(), "{:?}", messages[0]);
+    assert_eq!(messages[0]["type"], "native");
+    assert_eq!(messages[0]["name"], "helper");
+    assert_eq!(messages[0]["reasoning"], "opaque");
+    assert!(messages[1].get("content").unwrap().is_null());
+    assert_eq!(messages[2]["content"], "");
+    assert_eq!(messages[3]["content"], json!([]));
+}
+
+#[test]
 fn a_failed_call_is_logged_with_its_usage_and_the_error_propagates() {
     let client = Client::builder()
         .mode(Mode::Test)
