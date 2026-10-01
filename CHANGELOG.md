@@ -6,6 +6,11 @@ All notable changes to `prompton-sdk` are recorded here. The format follows
 
 ## Unreleased
 
+## 0.5.1
+
+- Patch source release metadata after the 0.5.0 source tag.
+- Replace hex cache-key encoding with an MSRV-compatible clippy-clean loop.
+
 - Retires message-slot expansion. A deployed message with `type: "slot"` now fails with
   `Message slots are not supported; compose conversation history in app code.`
 - Documents the app-owned chat flow: render PromptOn-managed messages, append application chat

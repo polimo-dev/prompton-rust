@@ -944,11 +944,12 @@ fn key_cache_dir(path: &Path) -> PathBuf {
 }
 
 fn key_cache_path(path: &Path, key: &str) -> PathBuf {
-    let encoded = key
-        .as_bytes()
-        .iter()
-        .map(|byte| format!("{byte:02x}"))
-        .collect::<String>();
+    const HEX: &[u8; 16] = b"0123456789abcdef";
+    let mut encoded = String::with_capacity(key.len() * 2);
+    for byte in key.as_bytes() {
+        encoded.push(HEX[(byte >> 4) as usize] as char);
+        encoded.push(HEX[(byte & 0x0f) as usize] as char);
+    }
     key_cache_dir(path).join(format!("{encoded}.json"))
 }
 
