@@ -6,6 +6,9 @@ All notable changes to `prompton-sdk` are recorded here. The format follows
 
 ## Unreleased
 
+- Suppress routine closed transport generation logs and completion trace events for
+  `%Req.TransportError{reason: :closed}` while preserving retries, callbacks and other errors.
+
 ## 0.5.1
 
 - Patch source release metadata after the 0.5.0 source tag.

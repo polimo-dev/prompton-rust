@@ -444,6 +444,9 @@ impl Client {
             record.sdk = Some(Sdk::default());
         }
         record.validate()?;
+        if is_closed_transport_log_record(&record) {
+            return Ok(());
+        }
 
         let policy = self.inner.store.payload_policy(&record.use_case);
 
@@ -485,10 +488,18 @@ impl Client {
         for (index, event) in events.iter_mut().enumerate() {
             fill_trace_event(index, event)?;
         }
+        let filtered = events
+            .iter()
+            .filter(|event| !is_closed_transport_trace_event(event))
+            .cloned()
+            .collect::<Vec<_>>();
+        if filtered.is_empty() {
+            return Ok(LogsAck::default());
+        }
         let env = environment.unwrap_or_else(|| self.inner.config.environment.clone());
         self.inner
             .api
-            .post_events(&env, events)
+            .post_events(&env, &filtered)
             .map_err(|failure| failure.error)
     }
 
@@ -692,6 +703,44 @@ fn fill_trace_event(index: usize, event: &mut TraceEvent) -> SdkResult<()> {
         .entry("sdk".to_string())
         .or_insert_with(|| json!({"name": SDK_NAME, "version": VERSION}));
     Ok(())
+}
+
+fn is_closed_transport_log_record(record: &LogRecord) -> bool {
+    if record.status != Status::Error {
+        return false;
+    }
+    let Some(error) = &record.error else {
+        return false;
+    };
+    error.kind == ErrorKind::Transport
+        && error
+            .message
+            .as_deref()
+            .is_some_and(is_closed_transport_message)
+}
+
+fn is_closed_transport_trace_event(event: &TraceEvent) -> bool {
+    if event.get("event_kind").and_then(Value::as_str) != Some(EVENT_KIND_COMPLETION)
+        || event.get("status").and_then(Value::as_str) != Some(EVENT_STATUS_ERROR)
+    {
+        return false;
+    }
+    event
+        .get("completion_output")
+        .and_then(Value::as_str)
+        .is_some_and(|message| {
+            is_closed_transport_message(message)
+                || message
+                    == "failed to call LLM: failed to send request: %Req.TransportError{reason: :closed}"
+        })
+}
+
+fn is_closed_transport_message(message: &str) -> bool {
+    matches!(
+        message,
+        "%Req.TransportError{reason: :closed}"
+            | "failed to send request: %Req.TransportError{reason: :closed}"
+    )
 }
 
 /// Options for reading a use case.

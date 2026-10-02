@@ -8,8 +8,9 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use prompton::{
-    CallFailure, CallMeta, Client, Completion, ErrorKind, LogConfig, LogRecord, Message, Mode,
-    Result, Status, TraceEvent, Usage, EVENT_KIND_TOOL_ATTEMPT, EVENT_STATUS_OK,
+    CallFailure, CallMeta, Client, Completion, ErrorKind, LogConfig, LogError, LogRecord, Message,
+    Mode, Result, Status, TraceEvent, Usage, EVENT_KIND_COMPLETION, EVENT_KIND_TOOL_ATTEMPT,
+    EVENT_STATUS_ERROR, EVENT_STATUS_OK,
 };
 use serde_json::{json, Value};
 use support::{StubResponse, StubServer};
@@ -396,6 +397,68 @@ fn redaction_runs_last_and_end_user_refs_can_be_hashed() {
         logged[0]["end_user_ref"],
         "6d894aa3ee802549d7f340e7c1cf0d1c1cb14cd84f768d92ffaa6785337c4997"
     );
+}
+
+#[test]
+fn closed_transport_generation_logs_are_suppressed_before_redaction() {
+    let redacted = Arc::new(AtomicUsize::new(0));
+    let counter = redacted.clone();
+    let client = Client::builder()
+        .mode(Mode::Test)
+        .environment("production")
+        .without_disk_cache()
+        .redact(move |value| {
+            counter.fetch_add(1, Ordering::Relaxed);
+            value
+        })
+        .log_sink(|_| {})
+        .build()
+        .unwrap();
+
+    let mut entry = record("greeting");
+    entry.status = Status::Error;
+    entry.error = Some(LogError::new(
+        ErrorKind::Transport,
+        "failed to send request: %Req.TransportError{reason: :closed}",
+    ));
+
+    client.log(entry).unwrap();
+
+    assert_eq!(
+        redacted.load(Ordering::Relaxed),
+        0,
+        "closed transport records are dropped before the redact hook"
+    );
+    assert!(
+        client.captured_logs().is_empty(),
+        "closed transport records should not reach the test buffer"
+    );
+}
+
+#[test]
+fn only_exact_closed_transport_generation_logs_are_suppressed() {
+    let client = Client::builder()
+        .mode(Mode::Test)
+        .environment("production")
+        .without_disk_cache()
+        .log_sink(|_| {})
+        .build()
+        .unwrap();
+
+    let mut transport_other = record("greeting");
+    transport_other.status = Status::Error;
+    transport_other.error = Some(LogError::new(ErrorKind::Transport, "connection refused"));
+    client.log(transport_other).unwrap();
+
+    let mut app_closed = record("greeting");
+    app_closed.status = Status::Error;
+    app_closed.error = Some(LogError::new(
+        ErrorKind::App,
+        "failed to send request: %Req.TransportError{reason: :closed}",
+    ));
+    client.log(app_closed).unwrap();
+
+    assert_eq!(client.captured_logs().len(), 2);
 }
 
 #[test]
@@ -825,6 +888,78 @@ fn log_events_posts_events_envelope_and_fills_stable_fields() {
     assert_eq!(envelope["logs"].as_array().unwrap().len(), 0);
     assert_eq!(envelope["events"].as_array().unwrap().len(), 1);
     assert!(requests[0].path.contains("environment=production"));
+}
+
+#[test]
+fn log_events_suppresses_closed_transport_completion_errors() {
+    let server = StubServer::start(|_, _| StubResponse::json(202, ACCEPTED));
+    let client = quiet_builder(&server).build().unwrap();
+    let mut event = TraceEvent::new();
+    event.insert("trace_id".to_string(), json!("trace-closed"));
+    event.insert("event_kind".to_string(), json!(EVENT_KIND_COMPLETION));
+    event.insert("status".to_string(), json!(EVENT_STATUS_ERROR));
+    event.insert(
+        "completion_output".to_string(),
+        json!("failed to call LLM: failed to send request: %Req.TransportError{reason: :closed}"),
+    );
+    let mut events = vec![event];
+
+    let ack = client.log_events(&mut events, None).unwrap();
+
+    assert_eq!(ack, prompton::LogsAck::default());
+    assert!(
+        !events[0]["event_id"].as_str().unwrap_or("").is_empty(),
+        "validation/fill still happens before filtering"
+    );
+    assert_eq!(server.request_count(), 0, "all filtered means no network");
+}
+
+#[test]
+fn log_events_filters_closed_transport_and_sends_the_rest_in_order() {
+    let server = StubServer::start(|request, _| {
+        let count = request.json()["events"].as_array().unwrap().len();
+        StubResponse::json(
+            202,
+            format!(
+                r#"{{"accepted":0,"duplicates":0,"rejected":[],"events":{{"accepted":{count},"duplicates":0,"rejected":[]}}}}"#
+            ),
+        )
+    });
+    let client = quiet_builder(&server).build().unwrap();
+    let mut events = vec![
+        TraceEvent::from_iter([
+            ("trace_id".to_string(), json!("trace-a")),
+            ("event_kind".to_string(), json!(EVENT_KIND_COMPLETION)),
+            ("status".to_string(), json!(EVENT_STATUS_ERROR)),
+            ("completion_output".to_string(), json!("ordinary failure")),
+        ]),
+        TraceEvent::from_iter([
+            ("trace_id".to_string(), json!("trace-closed")),
+            ("event_kind".to_string(), json!(EVENT_KIND_COMPLETION)),
+            ("status".to_string(), json!(EVENT_STATUS_ERROR)),
+            (
+                "completion_output".to_string(),
+                json!("%Req.TransportError{reason: :closed}"),
+            ),
+        ]),
+        TraceEvent::from_iter([
+            ("trace_id".to_string(), json!("trace-b")),
+            ("event_kind".to_string(), json!(EVENT_KIND_COMPLETION)),
+            ("status".to_string(), json!(EVENT_STATUS_ERROR)),
+            ("completion_output".to_string(), json!("connection refused")),
+        ]),
+    ];
+
+    let ack = client.log_events(&mut events, None).unwrap();
+
+    assert_eq!(ack.accepted, 2);
+    let requests = server.requests();
+    assert_eq!(requests.len(), 1);
+    let body = requests[0].json();
+    let sent = body["events"].as_array().unwrap();
+    assert_eq!(sent.len(), 2);
+    assert_eq!(sent[0]["trace_id"], "trace-a");
+    assert_eq!(sent[1]["trace_id"], "trace-b");
 }
 
 #[test]

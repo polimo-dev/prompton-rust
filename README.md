@@ -132,6 +132,7 @@ that logs still happen on the cached prompt document.
 | the prompt name is not pinned | `Error::UnknownPrompt { prompt_names, … }` — there is no silent fallback to `default` |
 | a variable the template needs is missing | `Error::Template(TemplateError::MissingVariable(name))`, with `error.missing_variable()` |
 | a monitoring log cannot be sent | it is retried with the same ids, then dropped and counted in `client.log_stats()` |
+| a routine closed-connection provider error reports `%Req.TransportError{reason: :closed}` | the generation log or completion trace event is skipped before sending; your provider result/error is unchanged |
 | the queue is full | the **oldest** records are dropped and counted |
 | the process exits while PromptOn is unhealthy | the queue is drained best effort in a few seconds; an armed `Retry-After` is respected rather than sent into, so shutting down is never held up by a backoff |
 
