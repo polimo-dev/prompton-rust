@@ -12,7 +12,7 @@ use std::time::Duration;
 
 use serde_json::Value;
 
-/// The two verbs the runtime API uses.
+/// The two verbs the PromptOn API uses.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Method {
     /// `GET /prompts`.

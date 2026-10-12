@@ -34,7 +34,7 @@ use crate::config::{Config, Mode, MAX_BACKOFF};
 use crate::error::Error;
 use crate::logger::Logger;
 
-/// The hard cap on records per request, from the runtime API.
+/// The hard cap on records per request, from the PromptOn API.
 pub const MAX_RECORDS_PER_REQUEST: usize = 200;
 /// The request size the buffer keeps batches under; the server's body limit is 5 MB.
 pub const MAX_REQUEST_BYTES: usize = 4_000_000;

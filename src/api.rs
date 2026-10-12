@@ -88,7 +88,7 @@ impl RemoteFailure {
     }
 }
 
-/// The runtime API client: base URL, key, and one HTTP transport.
+/// The PromptOn API client: base URL, key, and one HTTP transport.
 pub(crate) struct Api {
     pub base_url: String,
     pub api_key: Option<String>,
