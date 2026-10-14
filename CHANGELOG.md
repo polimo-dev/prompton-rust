@@ -4,6 +4,14 @@ All notable changes to `prompton-sdk` are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the crate follows
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## 0.7.0
+
+- Read schema v8 prompt documents with public readable resource references:
+  deployments use `provider`, `model`, and a positive `prompt_version` number, prompt versions are
+  keyed as `<prompt>@<number>`, and models are keyed as `<provider>:<model>`.
+- Keep legacy schema v4-v7 cache and bundle documents working while exposing deprecated resource id
+  fields as empty for schema v8 resolutions.
+
 ## 0.6.0
 
 - Breaking request contract: monitoring logs now send readable prompt evidence only: `deployment_revision`,

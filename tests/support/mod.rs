@@ -291,3 +291,50 @@ pub fn document_json(environment: &str, project: &str, greeting: &str) -> String
     })
     .to_string()
 }
+
+/// A schema v8 document with readable resource references.
+pub fn readable_document_json(environment: &str, project: &str, greeting: &str) -> String {
+    serde_json::json!({
+        "schema_version": 8,
+        "project": project,
+        "environment": environment,
+        "prompts": {
+            "greeting": {
+                "kind": "chat",
+                "input_schema": [{"name": "name", "type": "string", "required": true}],
+                "default_params": {"max_tokens": 512},
+                "payload_policy": {"mode": "full", "sample_rate": 1.0, "max_bytes": 262144}
+            }
+        },
+        "deployments": {
+            "greeting": {
+                "revision": "v2026.09.30-3",
+                "provider": "openrouter",
+                "model": "openai/gpt-4o-mini",
+                "prompt_version": 2,
+                "params": {"temperature": 0.2},
+                "provider_options": {}
+            }
+        },
+        "prompt_versions": {
+            "greeting@2": {
+                "prompt": "greeting",
+                "number": 2,
+                "engine": "liquid",
+                "messages": [{"role": "user", "content": greeting}]
+            }
+        },
+        "models": {
+            "openrouter:openai/gpt-4o-mini": {
+                "provider": "openrouter",
+                "model": "openai/gpt-4o-mini",
+                "display_name": "GPT-4o mini",
+                "metadata": {},
+                "provider_options": {"only": ["OpenAI"]},
+                "capabilities": ["tools"],
+                "status": "active"
+            }
+        }
+    })
+    .to_string()
+}

@@ -11,7 +11,7 @@ use std::time::Duration;
 use prompton::{
     Client, Error, HttpClient, HttpRequest, HttpResponse, Mode, Source, TransportError,
 };
-use support::{document_json, StubResponse, StubServer};
+use support::{document_json, readable_document_json, StubResponse, StubServer};
 
 const ETAG: &str = "\"sha256-1111\"";
 
@@ -578,6 +578,41 @@ fn the_tiers_are_memory_then_disk_then_bundle_then_remote() {
         }
         other => panic!("expected NotReady, got {other:?}"),
     }
+}
+
+#[test]
+fn schema_eight_bundle_serves_readable_refs_and_legacy_ids_stay_empty() {
+    let dir = support::temp_dir("readable-bundle");
+    let bundle = dir.join("bundle-v8.json");
+    std::fs::write(
+        &bundle,
+        readable_document_json("production", "demo", "Hello {{ name }}"),
+    )
+    .unwrap();
+
+    let client = Client::builder()
+        .mode(Mode::Offline)
+        .environment("production")
+        .without_disk_cache()
+        .bundle(&bundle)
+        .log_sink(|_| {})
+        .build()
+        .unwrap();
+
+    let use_case = client.use_case("greeting").unwrap();
+    assert_eq!(use_case.source, Source::Bundle);
+    assert_eq!(use_case.model.as_deref(), Some("openai/gpt-4o-mini"));
+    assert_eq!(use_case.deployment_id, None);
+    assert_eq!(use_case.model_id, None);
+    assert_eq!(use_case.prompt_version_id, None);
+    assert_eq!(use_case.prompt_version_number, Some(2));
+    assert_eq!(
+        use_case
+            .messages(serde_json::json!({"name": "Ada"}))
+            .unwrap()[0]
+            .content,
+        "Hello Ada"
+    );
 }
 
 #[test]

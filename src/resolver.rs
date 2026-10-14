@@ -238,22 +238,35 @@ pub(crate) fn resolve(
     )?;
 
     let empty = Map::new();
+    let readable_schema = document.schema_version >= 8;
     Ok(Resolution {
         use_case: use_case_key.to_string(),
         kind: use_case.kind.clone(),
-        deployment_id: deployment.id.clone(),
+        deployment_id: if readable_schema {
+            None
+        } else {
+            deployment.id.clone()
+        },
         deployment_revision: deployment.revision.clone(),
         prompt: prompt_name,
         available_prompts,
         model: model.and_then(|model| model.model_id.clone()),
-        model_id: model.map(|model| model.id.clone()),
+        model_id: if readable_schema {
+            None
+        } else {
+            model.map(|model| model.id.clone())
+        },
         provider: model.and_then(|model| model.provider.clone()),
         params,
         provider_options: merge(
             model.map(|model| &model.provider_options).unwrap_or(&empty),
             &deployment.provider_options,
         ),
-        prompt_version_id: version.map(|version| version.id.clone()),
+        prompt_version_id: if readable_schema {
+            None
+        } else {
+            version.map(|version| version.id.clone())
+        },
         prompt_version_number: version.and_then(|version| version.number),
         engine: version.map(|version| version.engine).unwrap_or_default(),
         messages,
@@ -410,12 +423,123 @@ mod tests {
         })
     }
 
+    fn readable_document_value() -> Value {
+        json!({
+            "schema_version": 8,
+            "project": "demo",
+            "environment": "production",
+            "prompts": {
+                "greeting": {"kind": "chat", "default_params": {"max_tokens": 512}},
+                "summary": {"kind": "text", "default_params": {}},
+                "missing": {"kind": "chat", "default_params": {}}
+            },
+            "deployments": {
+                "greeting": {"revision": "v2026.09.30-3", "provider": "openrouter",
+                             "model": "openai/gpt-4o-mini", "prompt_version": 2,
+                             "params": {"temperature": 0.2}, "provider_options": {"sort": null}},
+                "summary": {"revision": "v2026.09.30-4", "provider": "openrouter",
+                            "model": "openai/gpt-4o-mini", "prompt_version": 2,
+                            "params": {}, "provider_options": {}},
+                "missing": {"revision": "v2026.09.30-5", "provider": "openrouter",
+                            "model": "openai/missing-model", "prompt_version": 3,
+                            "params": {}, "provider_options": {}}
+            },
+            "prompt_versions": {
+                "greeting@2": {"prompt": "greeting", "number": 2, "engine": "liquid",
+                               "messages": [{"role": "user", "content": "Say hello to {{ name }}."}]},
+                "summary@2": {"prompt": "summary", "number": 2, "engine": "liquid",
+                              "text_template": "Summary: {{ text }}"}
+            },
+            "models": {
+                "openrouter:openai/gpt-4o-mini": {
+                    "provider": "openrouter",
+                    "model": "openai/gpt-4o-mini",
+                    "provider_options": {"only": ["OpenAI"]}
+                }
+            }
+        })
+    }
+
     fn document() -> UseCaseDocument {
         UseCaseDocument::from_value(&document_value()).unwrap().0
     }
 
     fn resolve_key(key: &str, options: ResolveOptions) -> Result<Resolution, Error> {
         resolve(&document(), key, &options, Source::Remote, Some("sha256-x"))
+    }
+
+    #[test]
+    fn schema_eight_resolves_readable_keys_with_null_legacy_ids() {
+        let document = UseCaseDocument::from_value(&readable_document_value())
+            .unwrap()
+            .0;
+        let resolution = resolve(
+            &document,
+            "greeting",
+            &ResolveOptions::default(),
+            Source::Bundle,
+            Some("sha256-v8"),
+        )
+        .unwrap();
+
+        assert_eq!(resolution.model.as_deref(), Some("openai/gpt-4o-mini"));
+        assert_eq!(resolution.provider.as_deref(), Some("openrouter"));
+        assert_eq!(resolution.deployment_id, None);
+        assert_eq!(resolution.model_id, None);
+        assert_eq!(resolution.prompt_version_id, None);
+        assert_eq!(resolution.prompt_version_number, Some(2));
+        assert_eq!(resolution.params["temperature"], json!(0.2));
+        assert_eq!(resolution.provider_options["only"], json!(["OpenAI"]));
+        assert_eq!(resolution.available_prompts, vec!["default"]);
+
+        let rendered = resolution.render(json!({"name": "Ada"})).unwrap();
+        assert!(matches!(rendered, Rendered::Messages(_)));
+    }
+
+    #[test]
+    fn schema_eight_scopes_same_version_numbers_by_prompt_key() {
+        let document = UseCaseDocument::from_value(&readable_document_value())
+            .unwrap()
+            .0;
+        let resolution = resolve(
+            &document,
+            "summary",
+            &ResolveOptions::default(),
+            Source::Remote,
+            None,
+        )
+        .unwrap();
+
+        assert_eq!(resolution.prompt_version_number, Some(2));
+        assert_eq!(
+            resolution.render(json!({"text": "hello"})).unwrap(),
+            Rendered::Text("Summary: hello".to_string())
+        );
+    }
+
+    #[test]
+    fn schema_eight_missing_readable_refs_warn_with_scoped_keys() {
+        let document = UseCaseDocument::from_value(&readable_document_value())
+            .unwrap()
+            .0;
+        let resolution = resolve(
+            &document,
+            "missing",
+            &ResolveOptions::default(),
+            Source::Remote,
+            None,
+        )
+        .unwrap();
+
+        assert_eq!(
+            resolution.warnings,
+            vec![
+                "missing_prompt_version: missing@3".to_string(),
+                "missing_model: openrouter:openai/missing-model".to_string()
+            ]
+        );
+        assert_eq!(resolution.prompt_version_number, None);
+        assert_eq!(resolution.model, None);
     }
 
     #[test]

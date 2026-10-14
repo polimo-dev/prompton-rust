@@ -2,7 +2,7 @@
 //!
 //! One request returns everything live in one environment — every deployment, the prompt versions
 //! and models they pin, and the use case metadata — and the SDK reads it locally. The
-//! SDK reads schema versions 4 through 7: stale disk caches, old bundles, missing versions and
+//! SDK reads schema versions 4 through 8: stale disk caches, old bundles, missing versions and
 //! unsupported future schema versions are refused.
 
 use std::collections::BTreeMap;
@@ -14,7 +14,7 @@ use serde_json::{Map, Value};
 use crate::template::Engine;
 
 /// The schema version this SDK reads.
-pub const SCHEMA_VERSION: i64 = 7;
+pub const SCHEMA_VERSION: i64 = 8;
 
 /// The default payload cap when a use case carries no `payload_policy`.
 pub const DEFAULT_MAX_BYTES: usize = 262_144;
@@ -422,7 +422,10 @@ impl UseCaseDocument {
                     for (key, raw) in raw_map {
                         match raw.as_object() {
                             Some(raw) => {
-                                deployments.insert(key.clone(), decode_deployment(key, raw)?);
+                                deployments.insert(
+                                    key.clone(),
+                                    decode_deployment(key, raw, schema_version, &mut warnings)?,
+                                );
                             }
                             None => warnings.push(format!("deployment {key} is not an object")),
                         }
@@ -440,7 +443,7 @@ impl UseCaseDocument {
             for (id, raw) in raw_map {
                 match raw.as_object() {
                     Some(raw) => {
-                        let version = decode_prompt_version(id, raw);
+                        let version = decode_prompt_version(id, raw, schema_version);
                         prompt_versions.insert(version.id.clone(), version);
                     }
                     None => warnings.push(format!("prompt version {id} is not an object")),
@@ -453,7 +456,7 @@ impl UseCaseDocument {
             for (id, raw) in raw_map {
                 match raw.as_object() {
                     Some(raw) => {
-                        let model = decode_model(id, raw);
+                        let model = decode_model(id, raw, schema_version);
                         models.insert(model.id.clone(), model);
                     }
                     None => warnings.push(format!("model {id} is not an object")),
@@ -544,9 +547,24 @@ fn decode_payload_policy(raw: &Map<String, Value>) -> PayloadPolicy {
     }
 }
 
-fn decode_deployment(key: &str, raw: &Map<String, Value>) -> Result<Deployment, DecodeError> {
+fn decode_deployment(
+    key: &str,
+    raw: &Map<String, Value>,
+    schema_version: i64,
+    warnings: &mut Vec<String>,
+) -> Result<Deployment, DecodeError> {
     let mut prompt_pins = BTreeMap::new();
-    if let Some(pins) = raw
+    if schema_version >= 8 {
+        if let Some(number) = raw.get("prompt_version").and_then(Value::as_i64) {
+            if number > 0 {
+                prompt_pins.insert("default".to_string(), format!("{key}@{number}"));
+            } else {
+                warnings.push(format!(
+                    "deployment {key} has non-positive prompt_version {number}"
+                ));
+            }
+        }
+    } else if let Some(pins) = raw
         .get("prompt_pins")
         .or_else(|| raw.get("template_pins"))
         .and_then(Value::as_object)
@@ -562,14 +580,18 @@ fn decode_deployment(key: &str, raw: &Map<String, Value>) -> Result<Deployment, 
         id: string_of(raw.get("id")),
         use_case_key: string_of(raw.get("use_case_key")).unwrap_or_else(|| key.to_string()),
         revision: revision_of(raw.get("revision"))?,
-        model_id: string_of(raw.get("model_id")),
+        model_id: if schema_version >= 8 {
+            readable_model_key(raw)
+        } else {
+            string_of(raw.get("model_id"))
+        },
         params: object_of(raw.get("params")),
         provider_options: object_of(raw.get("provider_options")),
         prompt_pins,
     })
 }
 
-fn decode_prompt_version(id: &str, raw: &Map<String, Value>) -> PromptVersion {
+fn decode_prompt_version(id: &str, raw: &Map<String, Value>, schema_version: i64) -> PromptVersion {
     let messages = raw
         .get("messages")
         .and_then(Value::as_array)
@@ -582,8 +604,16 @@ fn decode_prompt_version(id: &str, raw: &Map<String, Value>) -> PromptVersion {
         });
 
     PromptVersion {
-        id: string_of(raw.get("id")).unwrap_or_else(|| id.to_string()),
-        prompt_id: string_of(raw.get("prompt_id")),
+        id: if schema_version >= 8 {
+            readable_prompt_version_key(id, raw)
+        } else {
+            string_of(raw.get("id")).unwrap_or_else(|| id.to_string())
+        },
+        prompt_id: if schema_version >= 8 {
+            string_of(raw.get("prompt"))
+        } else {
+            string_of(raw.get("prompt_id"))
+        },
         number: raw.get("number").and_then(Value::as_i64),
         engine: Engine::from_wire(raw.get("engine").and_then(Value::as_str)),
         messages,
@@ -592,11 +622,19 @@ fn decode_prompt_version(id: &str, raw: &Map<String, Value>) -> PromptVersion {
     }
 }
 
-fn decode_model(id: &str, raw: &Map<String, Value>) -> Model {
+fn decode_model(id: &str, raw: &Map<String, Value>, schema_version: i64) -> Model {
     Model {
-        id: string_of(raw.get("id")).unwrap_or_else(|| id.to_string()),
+        id: if schema_version >= 8 {
+            readable_model_key(raw).unwrap_or_else(|| id.to_string())
+        } else {
+            string_of(raw.get("id")).unwrap_or_else(|| id.to_string())
+        },
         provider: string_of(raw.get("provider")),
-        model_id: string_of(raw.get("model_id")),
+        model_id: if schema_version >= 8 {
+            string_of(raw.get("model"))
+        } else {
+            string_of(raw.get("model_id"))
+        },
         display_name: string_of(raw.get("display_name")),
         metadata: object_of(raw.get("metadata")),
         provider_options: object_of(raw.get("provider_options")),
@@ -612,6 +650,25 @@ fn decode_model(id: &str, raw: &Map<String, Value>) -> Model {
             })
             .unwrap_or_default(),
         status: string_of(raw.get("status")),
+    }
+}
+
+fn readable_prompt_version_key(id: &str, raw: &Map<String, Value>) -> String {
+    match (
+        string_of(raw.get("prompt")),
+        raw.get("number")
+            .and_then(Value::as_i64)
+            .filter(|number| *number > 0),
+    ) {
+        (Some(prompt), Some(number)) => format!("{prompt}@{number}"),
+        _ => id.to_string(),
+    }
+}
+
+fn readable_model_key(raw: &Map<String, Value>) -> Option<String> {
+    match (string_of(raw.get("provider")), string_of(raw.get("model"))) {
+        (Some(provider), Some(model)) => Some(format!("{provider}:{model}")),
+        _ => None,
     }
 }
 
@@ -708,17 +765,76 @@ mod tests {
     }
 
     #[test]
-    fn accepts_schema_versions_through_seven_and_refuses_future() {
-        for version in [5, 6, 7] {
+    fn accepts_schema_versions_through_eight_and_refuses_future() {
+        for version in [5, 6, 7, 8] {
             let mut value = document();
             value["schema_version"] = json!(version);
             assert!(UseCaseDocument::from_value(&value).is_ok());
         }
         let mut value = document();
-        value["schema_version"] = json!(8);
+        value["schema_version"] = json!(9);
         assert_eq!(
             UseCaseDocument::from_value(&value),
-            Err(DecodeError::UnsupportedSchemaVersion(8))
+            Err(DecodeError::UnsupportedSchemaVersion(9))
+        );
+    }
+
+    #[test]
+    fn decodes_schema_eight_readable_resource_keys() {
+        let value = json!({
+            "schema_version": 8,
+            "project": "demo",
+            "environment": "production",
+            "prompts": {
+                "greeting": {"kind": "chat", "default_params": {"max_tokens": 64}}
+            },
+            "deployments": {
+                "greeting": {
+                    "revision": "v2026.09.30-3",
+                    "provider": "openrouter",
+                    "model": "openai/gpt-4o-mini",
+                    "prompt_version": 2,
+                    "params": {"temperature": 0.2}
+                }
+            },
+            "prompt_versions": {
+                "greeting@2": {
+                    "prompt": "greeting",
+                    "number": 2,
+                    "engine": "liquid",
+                    "messages": [{"role": "user", "content": "hi"}]
+                }
+            },
+            "models": {
+                "openrouter:openai/gpt-4o-mini": {
+                    "provider": "openrouter",
+                    "model": "openai/gpt-4o-mini",
+                    "status": "active"
+                }
+            }
+        });
+
+        let (doc, warnings) = UseCaseDocument::from_value(&value).unwrap();
+        assert!(warnings.is_empty());
+        assert_eq!(doc.schema_version, 8);
+        assert_eq!(doc.deployments["greeting"].id, None);
+        assert_eq!(
+            doc.deployments["greeting"].model_id.as_deref(),
+            Some("openrouter:openai/gpt-4o-mini")
+        );
+        assert_eq!(
+            doc.deployments["greeting"].prompt_pins["default"],
+            "greeting@2"
+        );
+        assert_eq!(
+            doc.prompt_versions["greeting@2"].prompt_id.as_deref(),
+            Some("greeting")
+        );
+        assert_eq!(
+            doc.models["openrouter:openai/gpt-4o-mini"]
+                .model_id
+                .as_deref(),
+            Some("openai/gpt-4o-mini")
         );
     }
 
