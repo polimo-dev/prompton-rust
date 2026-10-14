@@ -10,9 +10,7 @@
 
 use std::time::Duration;
 
-use prompton::{
-    CallMeta, Client, Completion, CostSource, Error, Message, Mode, Result, Usage, UseCaseOptions,
-};
+use prompton::{CallMeta, Client, Completion, CostSource, Error, Message, Mode, Result, Usage};
 use serde_json::json;
 
 fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
@@ -34,7 +32,7 @@ fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     };
 
     // 1. Which model, which parameters, which prompt — from the use-case document in memory, no HTTP call.
-    let call = match client.use_case_with("greeting", &UseCaseOptions::prompt("default")) {
+    let call = match client.use_case("greeting") {
         Ok(call) => call,
         Err(Error::Unresolved(use_case)) => {
             eprintln!("{use_case} has no live deployment in this environment — deploy it first");
@@ -43,10 +41,9 @@ fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
         Err(error) => return Err(error.into()),
     };
     println!(
-        "use_case {} → {} (deployment {} revision {:?}, source {})",
+        "use_case {} → {} (revision {:?}, source {})",
         call.key,
         call.model.clone().unwrap_or_default(),
-        call.deployment_id.clone().unwrap_or_default(),
         call.deployment_revision,
         call.source.as_str()
     );
@@ -115,12 +112,11 @@ fn app_history() -> Vec<Message> {
 /// The use-case document an app would normally fetch from PromptOn, inline so the example runs anywhere.
 fn example_use_case_document() -> serde_json::Value {
     json!({
-        "schema_version": 4,
+        "schema_version": 8,
         "project": "example",
         "environment": "production",
-        "use_cases": {
+        "prompts": {
             "greeting": {
-                "id": "0198f2a1-0000-7000-8000-00000000c001",
                 "kind": "chat",
                 "input_schema": [{"name": "name", "type": "string", "required": true}],
                 "default_params": {"max_tokens": 512, "temperature": 0.7},
@@ -129,18 +125,19 @@ fn example_use_case_document() -> serde_json::Value {
         },
         "deployments": {
             "greeting": {
-                "id": "0198f2a1-0000-7000-8000-00000000d001",
                 "revision": "v2026.09.30-3",
-                "model_id": "0198f2a1-0000-7000-8000-00000000e001",
+                "provider": "openrouter",
+                "model": "openai/gpt-4o-mini",
+                "prompt_version": 2,
                 "params": {"temperature": 0.2},
-                "provider_options": {},
-                "prompt_pins": {"default": "0198f2a1-0000-7000-8000-00000000a001"}
+                "provider_options": {"only": ["OpenAI"]}
             }
         },
         "prompt_versions": {
-            "0198f2a1-0000-7000-8000-00000000a001": {
-                "id": "0198f2a1-0000-7000-8000-00000000a001",
+            "greeting@2": {
+                "prompt": "greeting",
                 "number": 2,
+                "kind": "chat",
                 "engine": "liquid",
                 "messages": [
                     {"role": "system", "content": "You are a friendly greeter. Answer in one line."},
@@ -149,12 +146,11 @@ fn example_use_case_document() -> serde_json::Value {
             }
         },
         "models": {
-            "0198f2a1-0000-7000-8000-00000000e001": {
-                "id": "0198f2a1-0000-7000-8000-00000000e001",
+            "openrouter:openai/gpt-4o-mini": {
                 "provider": "openrouter",
-                "model_id": "openai/gpt-4o-mini",
+                "model": "openai/gpt-4o-mini",
                 "display_name": "GPT-4o mini",
-                "provider_options": {"only": ["OpenAI"]},
+                "provider_options": {},
                 "capabilities": ["tools"],
                 "status": "active"
             }

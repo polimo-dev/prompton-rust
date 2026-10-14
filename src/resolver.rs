@@ -430,8 +430,7 @@ mod tests {
             "environment": "production",
             "prompts": {
                 "greeting": {"kind": "chat", "default_params": {"max_tokens": 512}},
-                "summary": {"kind": "text", "default_params": {}},
-                "missing": {"kind": "chat", "default_params": {}}
+                "summary": {"kind": "text", "default_params": {}}
             },
             "deployments": {
                 "greeting": {"revision": "v2026.09.30-3", "provider": "openrouter",
@@ -439,9 +438,6 @@ mod tests {
                              "params": {"temperature": 0.2}, "provider_options": {"sort": null}},
                 "summary": {"revision": "v2026.09.30-4", "provider": "openrouter",
                             "model": "openai/gpt-4o-mini", "prompt_version": 2,
-                            "params": {}, "provider_options": {}},
-                "missing": {"revision": "v2026.09.30-5", "provider": "openrouter",
-                            "model": "openai/missing-model", "prompt_version": 3,
                             "params": {}, "provider_options": {}}
             },
             "prompt_versions": {
@@ -518,28 +514,23 @@ mod tests {
     }
 
     #[test]
-    fn schema_eight_missing_readable_refs_warn_with_scoped_keys() {
-        let document = UseCaseDocument::from_value(&readable_document_value())
-            .unwrap()
-            .0;
-        let resolution = resolve(
-            &document,
-            "missing",
-            &ResolveOptions::default(),
-            Source::Remote,
-            None,
-        )
-        .unwrap();
+    fn schema_eight_missing_readable_refs_are_rejected_before_resolution() {
+        let mut value = readable_document_value();
+        value["prompts"]["missing"] = json!({"kind": "chat", "default_params": {}});
+        value["deployments"]["missing"] = json!({
+            "revision": "v2026.09.30-5",
+            "provider": "openrouter",
+            "model": "openai/missing-model",
+            "prompt_version": 3,
+            "params": {},
+            "provider_options": {}
+        });
 
-        assert_eq!(
-            resolution.warnings,
-            vec![
-                "missing_prompt_version: missing@3".to_string(),
-                "missing_model: openrouter:openai/missing-model".to_string()
-            ]
-        );
-        assert_eq!(resolution.prompt_version_number, None);
-        assert_eq!(resolution.model, None);
+        assert!(matches!(
+            UseCaseDocument::from_value(&value),
+            Err(crate::snapshot::DecodeError::Invalid(message))
+                if message.contains("deployment missing references missing prompt version missing@3")
+        ));
     }
 
     #[test]

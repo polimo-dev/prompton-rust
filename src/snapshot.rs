@@ -405,6 +405,10 @@ impl UseCaseDocument {
                 DecodeError::Invalid("use_cases is required and must be an object".to_string())
             })?;
 
+        if schema_version >= 8 {
+            validate_schema8_references(map)?;
+        }
+
         let mut use_cases = BTreeMap::new();
         for (key, raw) in use_cases_raw {
             match raw.as_object() {
@@ -547,23 +551,125 @@ fn decode_payload_policy(raw: &Map<String, Value>) -> PayloadPolicy {
     }
 }
 
+fn validate_schema8_references(map: &Map<String, Value>) -> Result<(), DecodeError> {
+    let deployments = optional_object(map, "deployments")?;
+    let prompt_versions = optional_object(map, "prompt_versions")?;
+    let models = optional_object(map, "models")?;
+
+    if let Some(prompt_versions) = prompt_versions {
+        for (key, raw) in prompt_versions {
+            let raw = raw.as_object().ok_or_else(|| {
+                DecodeError::Invalid(format!("prompt_versions.{key} must be an object"))
+            })?;
+            let prompt =
+                required_string(raw.get("prompt"), &format!("prompt_versions.{key}.prompt"))?;
+            let number =
+                strict_positive_i64(raw.get("number"), &format!("prompt_versions.{key}.number"))?;
+            let expected = format!("{prompt}@{number}");
+            if key != &expected {
+                return Err(DecodeError::Invalid(format!(
+                    "prompt_versions key {key} must match embedded prompt version {expected}"
+                )));
+            }
+        }
+    }
+
+    if let Some(models) = models {
+        for (key, raw) in models {
+            let raw = raw
+                .as_object()
+                .ok_or_else(|| DecodeError::Invalid(format!("models.{key} must be an object")))?;
+            let provider = required_string(raw.get("provider"), &format!("models.{key}.provider"))?;
+            let model = required_string(raw.get("model"), &format!("models.{key}.model"))?;
+            let expected = format!("{provider}:{model}");
+            if key != &expected {
+                return Err(DecodeError::Invalid(format!(
+                    "models key {key} must match embedded model {expected}"
+                )));
+            }
+        }
+    }
+
+    if let Some(deployments) = deployments {
+        for (key, raw) in deployments {
+            let raw = raw.as_object().ok_or_else(|| {
+                DecodeError::Invalid(format!("deployments.{key} must be an object"))
+            })?;
+            let number = strict_positive_i64(
+                raw.get("prompt_version"),
+                &format!("deployments.{key}.prompt_version"),
+            )?;
+            let provider =
+                required_string(raw.get("provider"), &format!("deployments.{key}.provider"))?;
+            let model = required_string(raw.get("model"), &format!("deployments.{key}.model"))?;
+            let prompt_version_key = format!("{key}@{number}");
+            if !prompt_versions.is_some_and(|versions| versions.contains_key(&prompt_version_key)) {
+                return Err(DecodeError::Invalid(format!(
+                    "deployment {key} references missing prompt version {prompt_version_key}"
+                )));
+            }
+            let model_key = format!("{provider}:{model}");
+            if !models.is_some_and(|models| models.contains_key(&model_key)) {
+                return Err(DecodeError::Invalid(format!(
+                    "deployment {key} references missing model {model_key}"
+                )));
+            }
+        }
+    }
+
+    Ok(())
+}
+
+fn optional_object<'a>(
+    map: &'a Map<String, Value>,
+    key: &str,
+) -> Result<Option<&'a Map<String, Value>>, DecodeError> {
+    match map.get(key) {
+        Some(Value::Object(raw)) => Ok(Some(raw)),
+        Some(Value::Null) | None => Ok(None),
+        Some(_) => Err(DecodeError::Invalid(format!("{key} must be an object"))),
+    }
+}
+
+fn required_string<'a>(value: Option<&'a Value>, field: &str) -> Result<&'a str, DecodeError> {
+    match value {
+        Some(Value::String(value)) if !value.is_empty() => Ok(value),
+        Some(Value::String(_)) => Err(DecodeError::Invalid(format!(
+            "{field} must be a non-empty string"
+        ))),
+        Some(_) => Err(DecodeError::Invalid(format!("{field} must be a string"))),
+        None => Err(DecodeError::Invalid(format!("{field} is required"))),
+    }
+}
+
+fn strict_positive_i64(value: Option<&Value>, field: &str) -> Result<i64, DecodeError> {
+    match value {
+        Some(Value::Number(number)) => match number.as_i64() {
+            Some(number) if number > 0 => Ok(number),
+            _ => Err(DecodeError::Invalid(format!(
+                "{field} must be a positive integer"
+            ))),
+        },
+        Some(_) => Err(DecodeError::Invalid(format!(
+            "{field} must be a positive integer"
+        ))),
+        None => Err(DecodeError::Invalid(format!("{field} is required"))),
+    }
+}
+
 fn decode_deployment(
     key: &str,
     raw: &Map<String, Value>,
     schema_version: i64,
-    warnings: &mut Vec<String>,
+    _warnings: &mut Vec<String>,
 ) -> Result<Deployment, DecodeError> {
     let mut prompt_pins = BTreeMap::new();
     if schema_version >= 8 {
-        if let Some(number) = raw.get("prompt_version").and_then(Value::as_i64) {
-            if number > 0 {
-                prompt_pins.insert("default".to_string(), format!("{key}@{number}"));
-            } else {
-                warnings.push(format!(
-                    "deployment {key} has non-positive prompt_version {number}"
-                ));
-            }
-        }
+        let number = strict_positive_i64(
+            raw.get("prompt_version"),
+            &format!("deployment {key} prompt_version"),
+        )?;
+        prompt_pins.insert("default".to_string(), format!("{key}@{number}"));
     } else if let Some(pins) = raw
         .get("prompt_pins")
         .or_else(|| raw.get("template_pins"))
@@ -766,11 +872,12 @@ mod tests {
 
     #[test]
     fn accepts_schema_versions_through_eight_and_refuses_future() {
-        for version in [5, 6, 7, 8] {
+        for version in [5, 6, 7] {
             let mut value = document();
             value["schema_version"] = json!(version);
             assert!(UseCaseDocument::from_value(&value).is_ok());
         }
+        assert!(UseCaseDocument::from_value(&readable_document()).is_ok());
         let mut value = document();
         value["schema_version"] = json!(9);
         assert_eq!(
@@ -779,9 +886,8 @@ mod tests {
         );
     }
 
-    #[test]
-    fn decodes_schema_eight_readable_resource_keys() {
-        let value = json!({
+    fn readable_document() -> Value {
+        json!({
             "schema_version": 8,
             "project": "demo",
             "environment": "production",
@@ -812,7 +918,12 @@ mod tests {
                     "status": "active"
                 }
             }
-        });
+        })
+    }
+
+    #[test]
+    fn decodes_schema_eight_readable_resource_keys() {
+        let value = readable_document();
 
         let (doc, warnings) = UseCaseDocument::from_value(&value).unwrap();
         assert!(warnings.is_empty());
@@ -836,6 +947,55 @@ mod tests {
                 .as_deref(),
             Some("openai/gpt-4o-mini")
         );
+    }
+
+    #[test]
+    fn schema_eight_requires_strict_readable_refs() {
+        let mut string_pin = readable_document();
+        string_pin["deployments"]["greeting"]["prompt_version"] = json!("2");
+        assert!(matches!(
+            UseCaseDocument::from_value(&string_pin),
+            Err(DecodeError::Invalid(message)) if message.contains("deployments.greeting.prompt_version")
+        ));
+
+        let mut fractional_pin = readable_document();
+        fractional_pin["deployments"]["greeting"]["prompt_version"] = json!(2.5);
+        assert!(matches!(
+            UseCaseDocument::from_value(&fractional_pin),
+            Err(DecodeError::Invalid(message)) if message.contains("positive integer")
+        ));
+
+        let mut bad_version_key = readable_document();
+        let version = bad_version_key["prompt_versions"]
+            .as_object_mut()
+            .unwrap()
+            .remove("greeting@2")
+            .unwrap();
+        bad_version_key["prompt_versions"]
+            .as_object_mut()
+            .unwrap()
+            .insert("other@2".to_string(), version);
+        assert!(matches!(
+            UseCaseDocument::from_value(&bad_version_key),
+            Err(DecodeError::Invalid(message)) if message.contains("prompt_versions key other@2")
+        ));
+
+        let mut missing_model = readable_document();
+        missing_model["deployments"]["greeting"]["model"] = json!("openai/missing");
+        assert!(matches!(
+            UseCaseDocument::from_value(&missing_model),
+            Err(DecodeError::Invalid(message)) if message.contains("missing model openrouter:openai/missing")
+        ));
+
+        let mut colon_model = readable_document();
+        colon_model["deployments"]["greeting"]["model"] = json!("vendor:family/model");
+        let model = json!({"provider": "openrouter", "model": "vendor:family/model"});
+        colon_model["models"].as_object_mut().unwrap().clear();
+        colon_model["models"]
+            .as_object_mut()
+            .unwrap()
+            .insert("openrouter:vendor:family/model".to_string(), model);
+        assert!(UseCaseDocument::from_value(&colon_model).is_ok());
     }
 
     #[test]
