@@ -18,11 +18,11 @@ use_case.track(…, || …)        → your provider call, timed and logged
 
 ## Install
 
-Install the v0.7.1 GitHub source release:
+Install the v0.8.0 GitHub source release:
 
 ```toml
 [dependencies]
-prompton-sdk = { git = "https://github.com/polimo-dev/prompton-rust", tag = "v0.7.1" }
+prompton-sdk = { git = "https://github.com/polimo-dev/prompton-rust", tag = "v0.8.0" }
 ```
 
 The crate is `prompton-sdk`; the library you import is `prompton`. Rust 1.85 or newer.
@@ -172,7 +172,7 @@ keys, no `PTN_API_KEY`, no user PII beyond `end_user_ref`.
 | `use_case`, `model`, `status`, `started_at` | the SDK | the four required fields besides `id` |
 | `kind` | the use case | `chat`, `text` or `embedding` |
 | `deployment_revision`, `prompt`, `prompt_version_number` | the use case | readable evidence for the pin that produced this call |
-| `deployment_id`, `prompt_version_id`, `model_id` | the use case | deprecated local evidence from legacy documents; schema v8 readable documents leave these empty |
+| `deployment_id`, `prompt_version_id`, `model_id` | the use case | deprecated local evidence from legacy documents; schema v1 readable documents leave these empty |
 | `source` | the store | `remote`, `disk`, `bundle` or `manual` |
 | `provider`, `model_used`, `upstream_provider` | the use case and your result | who actually served it |
 | `params` | the use case (plus `CallMeta::params`) | what the call was made with |

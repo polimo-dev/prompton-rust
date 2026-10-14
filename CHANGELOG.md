@@ -4,6 +4,14 @@ All notable changes to `prompton-sdk` are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the crate follows
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+
+## 0.8.0
+
+- Reset prompt document decoding to schema version 1. Runtime detail responses now use singular `prompt`, `deployment`, `prompt_version`, and `model` objects; offline bundles use keyed `prompts`, `deployments`, `prompt_versions`, and `models` maps.
+- Use `variables` for public prompt metadata, preserving each variable `description` and `example` value for generated snippets and tooling.
+- Reject legacy resource UUID references in public prompt documents; deployments, prompt versions, and models now resolve through readable provider/model/prompt-version keys.
+- Treat `GET /prompts` prompt arrays as discovery lists only; load runtime configuration from each `GET /prompts/{key}` detail or from an assembled schema v1 bundle.
+
 ## 0.7.1
 
 - Read schema v9 single-prompt responses from `GET /prompts/{key}`, where `prompt`,

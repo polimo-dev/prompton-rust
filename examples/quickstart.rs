@@ -112,13 +112,13 @@ fn app_history() -> Vec<Message> {
 /// The use-case document an app would normally fetch from PromptOn, inline so the example runs anywhere.
 fn example_use_case_document() -> serde_json::Value {
     json!({
-        "schema_version": 8,
+        "schema_version": 1,
         "project": "example",
         "environment": "production",
         "prompts": {
             "greeting": {
                 "kind": "chat",
-                "input_schema": [{"name": "name", "type": "string", "required": true}],
+                "variables": [{"name": "name", "type": "string", "required": true}],
                 "default_params": {"max_tokens": 512, "temperature": 0.7},
                 "payload_policy": {"mode": "full", "sample_rate": 1.0, "max_bytes": 262144}
             }

@@ -59,6 +59,7 @@ impl HttpClient for ConcurrentFetchClient {
         let mut body = document_json("production", "demo", "Hello {{ name }}");
         if request.url.contains("/prompts/demand_other?") {
             body = body
+                .replace("\"greeting@2\"", "\"demand_other@2\"")
                 .replace("\"greeting\"", "\"demand_other\"")
                 .replace("openai/gpt-4o-mini", "openai/other-model");
         }
@@ -187,6 +188,7 @@ fn concurrent_different_keys_fetch_independently() {
 #[test]
 fn another_key_fetch_does_not_mutate_a_fresh_key() {
     let other_doc = document_json("production", "demo", "Hello {{ name }}")
+        .replace("\"greeting@2\"", "\"demand_other@2\"")
         .replace("\"greeting\"", "\"demand_other\"")
         .replace("openai/gpt-4o-mini", "openai/other-model");
     let server = StubServer::start(move |request, _| {
@@ -455,6 +457,7 @@ fn failed_fetch_gate_is_measured_from_attempt_start() {
 #[test]
 fn per_key_disk_cache_survives_restart_with_independent_documents() {
     let other_doc = document_json("production", "demo", "Hello {{ name }}")
+        .replace("\"greeting@2\"", "\"demand_other@2\"")
         .replace("\"greeting\"", "\"demand_other\"")
         .replace("openai/gpt-4o-mini", "openai/other-model");
     let server = StubServer::start(move |request, _| {
@@ -583,9 +586,9 @@ fn the_tiers_are_memory_then_disk_then_bundle_then_remote() {
 }
 
 #[test]
-fn schema_eight_bundle_serves_readable_refs_and_legacy_ids_stay_empty() {
+fn schema_one_bundle_serves_readable_refs_and_legacy_ids_stay_empty() {
     let dir = support::temp_dir("readable-bundle");
-    let bundle = dir.join("bundle-v8.json");
+    let bundle = dir.join("bundle-v1.json");
     std::fs::write(
         &bundle,
         readable_document_json("production", "demo", "Hello {{ name }}"),
@@ -618,8 +621,8 @@ fn schema_eight_bundle_serves_readable_refs_and_legacy_ids_stay_empty() {
 }
 
 #[test]
-fn schema_nine_single_prompt_fetch_persists_original_bytes_across_disk_restart() {
-    let dir = support::temp_dir("single-v9-raw");
+fn schema_one_single_prompt_fetch_persists_original_bytes_across_disk_restart() {
+    let dir = support::temp_dir("single-v1-raw");
     let disk = dir.join("snapshot.json");
     let body = readable_single_document_json("production", "demo", "Hello {{ name }}");
     let server = StubServer::start({
@@ -720,7 +723,7 @@ fn a_corrupt_or_partial_file_is_ignored_rather_than_fatal() {
     ));
 
     // A v1/v2 document is refused the same way.
-    std::fs::write(&disk, br#"{"schema_version": 2, "use_cases": {}}"#).unwrap();
+    std::fs::write(&disk, br#"{"schema_version": 2, "prompts": {}}"#).unwrap();
     let client = Client::builder()
         .mode(Mode::Offline)
         .environment("production")

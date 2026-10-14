@@ -11,7 +11,7 @@ fn every_use_case_case() {
     let documents = data["documents"].as_object().expect("documents");
     let cases = data["cases"].as_array().expect("cases");
     assert!(
-        cases.len() >= 15,
+        cases.len() >= 13,
         "expected the full suite, got {}",
         cases.len()
     );
@@ -224,6 +224,11 @@ fn assert_error(name: &str, error: &Error, expect: &Value) {
                 expect["variable"].as_str(),
                 "{name}"
             );
+        }
+        ("render_error", Error::Template(prompton::TemplateError::Render(message))) => {
+            if let Some(expected) = expect["message"].as_str() {
+                assert_eq!(message, expected, "{name}");
+            }
         }
         (expected, error) => panic!("{name}: expected {expected}, got {error}"),
     }

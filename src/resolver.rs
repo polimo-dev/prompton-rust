@@ -15,7 +15,7 @@
 use serde_json::{Map, Value};
 
 use crate::error::Error;
-use crate::snapshot::{InputVariable, Kind, Message, PayloadPolicy, UseCaseDocument};
+use crate::snapshot::{Kind, Message, PayloadPolicy, UseCaseDocument, VariableDefinition};
 use crate::template::{self, Engine, TemplateError, Vars};
 
 /// The prompt name used when a call does not ask for one.
@@ -102,8 +102,8 @@ pub(crate) struct Resolution {
     pub messages: Option<Vec<Message>>,
     /// The raw (unrendered) template, for a text use case.
     pub text: Option<String>,
-    /// The use case's declared input variables.
-    pub input_schema: Vec<InputVariable>,
+    /// The use case's declared variables.
+    pub variables: Vec<VariableDefinition>,
     /// The use case's payload storage policy.
     pub payload_policy: Option<PayloadPolicy>,
     /// Which tier the use-case document came from.
@@ -238,40 +238,27 @@ pub(crate) fn resolve(
     )?;
 
     let empty = Map::new();
-    let readable_schema = document.schema_version >= 8;
     Ok(Resolution {
         use_case: use_case_key.to_string(),
         kind: use_case.kind.clone(),
-        deployment_id: if readable_schema {
-            None
-        } else {
-            deployment.id.clone()
-        },
+        deployment_id: None,
         deployment_revision: deployment.revision.clone(),
         prompt: prompt_name,
         available_prompts,
         model: model.and_then(|model| model.model_id.clone()),
-        model_id: if readable_schema {
-            None
-        } else {
-            model.map(|model| model.id.clone())
-        },
+        model_id: None,
         provider: model.and_then(|model| model.provider.clone()),
         params,
         provider_options: merge(
             model.map(|model| &model.provider_options).unwrap_or(&empty),
             &deployment.provider_options,
         ),
-        prompt_version_id: if readable_schema {
-            None
-        } else {
-            version.map(|version| version.id.clone())
-        },
+        prompt_version_id: None,
         prompt_version_number: version.and_then(|version| version.number),
         engine: version.map(|version| version.engine).unwrap_or_default(),
         messages,
         text,
-        input_schema: use_case.input_schema.clone(),
+        variables: use_case.variables.clone(),
         payload_policy: use_case.payload_policy.clone(),
         source,
         etag: etag.map(str::to_string),
@@ -391,33 +378,34 @@ mod tests {
 
     fn document_value() -> Value {
         json!({
-            "schema_version": 4,
+            "schema_version": 1,
             "project": "demo",
             "environment": "production",
-            "use_cases": {
-                "greeting": {"id": "u1", "kind": "chat", "default_params": {"max_tokens": 512},
-                             "input_schema": [], "payload_policy": null},
-                "embed": {"id": "u2", "kind": "embedding", "default_params": {"dimensions": 256},
-                          "input_schema": []},
-                "draft": {"id": "u3", "kind": "chat", "default_params": {}, "input_schema": []}
+            "prompts": {
+                "greeting": {"kind": "chat", "default_params": {"max_tokens": 512},
+                             "variables": [], "payload_policy": null},
+                "embed": {"kind": "embedding", "default_params": {"dimensions": 256},
+                          "variables": []},
+                "draft": {"kind": "chat", "default_params": {}, "variables": []}
             },
             "deployments": {
-                "greeting": {"id": "d1", "revision": "v2026.09.30-3", "model_id": "m1",
-                             "params": {"temperature": 0.2}, "provider_options": {"sort": null},
-                             "prompt_pins": {"default": "v1", "ko": "v2"}},
-                "embed": {"id": "d2", "revision": "v2026.09.30-2", "model_id": "m2", "params": {},
-                          "provider_options": {}, "prompt_pins": {}}
+                "greeting": {"revision": "v2026.09.30-3", "provider": "openrouter",
+                             "model": "openai/gpt-4o-mini", "prompt_version": 2,
+                             "params": {"temperature": 0.2}, "provider_options": {"sort": null}},
+                "embed": {"revision": "v2026.09.30-2", "provider": "openrouter",
+                          "model": "openai/text-embedding-3-small", "prompt_version": 1,
+                          "params": {}, "provider_options": {}}
             },
             "prompt_versions": {
-                "v1": {"id": "v1", "number": 2, "engine": "liquid",
+                "greeting@2": {"prompt": "greeting", "number": 2, "engine": "liquid",
                        "messages": [{"role": "user", "content": "Say hello to {{ name }}."}]},
-                "v2": {"id": "v2", "number": 1, "engine": "liquid",
-                       "messages": [{"role": "user", "content": "{{ name }}님 안녕."}]}
+                "embed@1": {"prompt": "embed", "number": 1, "engine": "liquid",
+                       "messages": []}
             },
             "models": {
-                "m1": {"id": "m1", "provider": "openrouter", "model_id": "openai/gpt-4o-mini",
+                "openrouter:openai/gpt-4o-mini": {"provider": "openrouter", "model": "openai/gpt-4o-mini",
                        "provider_options": {"only": ["OpenAI"]}},
-                "m2": {"id": "m2", "provider": "openrouter", "model_id": "openai/text-embedding-3-small",
+                "openrouter:openai/text-embedding-3-small": {"provider": "openrouter", "model": "openai/text-embedding-3-small",
                        "provider_options": {}}
             }
         })
@@ -425,7 +413,7 @@ mod tests {
 
     fn readable_document_value() -> Value {
         json!({
-            "schema_version": 8,
+            "schema_version": 1,
             "project": "demo",
             "environment": "production",
             "prompts": {
@@ -465,7 +453,7 @@ mod tests {
     }
 
     #[test]
-    fn schema_eight_resolves_readable_keys_with_null_legacy_ids() {
+    fn schema_one_resolves_readable_keys_with_null_legacy_ids() {
         let document = UseCaseDocument::from_value(&readable_document_value())
             .unwrap()
             .0;
@@ -474,7 +462,7 @@ mod tests {
             "greeting",
             &ResolveOptions::default(),
             Source::Bundle,
-            Some("sha256-v8"),
+            Some("sha256-v1"),
         )
         .unwrap();
 
@@ -493,7 +481,7 @@ mod tests {
     }
 
     #[test]
-    fn schema_eight_scopes_same_version_numbers_by_prompt_key() {
+    fn schema_one_scopes_same_version_numbers_by_prompt_key() {
         let document = UseCaseDocument::from_value(&readable_document_value())
             .unwrap()
             .0;
@@ -514,7 +502,7 @@ mod tests {
     }
 
     #[test]
-    fn schema_eight_missing_readable_refs_are_rejected_before_resolution() {
+    fn schema_one_missing_readable_refs_are_rejected_before_resolution() {
         let mut value = readable_document_value();
         value["prompts"]["missing"] = json!({"kind": "chat", "default_params": {}});
         value["deployments"]["missing"] = json!({
@@ -534,10 +522,9 @@ mod tests {
     }
 
     #[test]
-    fn schema_seven_tools_are_provider_params_and_metadata_is_stripped() {
+    fn schema_one_tools_are_provider_params_and_metadata_is_stripped() {
         let mut value = document_value();
-        value["schema_version"] = json!(7);
-        value["prompt_versions"]["v1"]["tools"] = json!({
+        value["prompt_versions"]["greeting@2"]["tools"] = json!({
             "definitions": [{
                 "type": "function",
                 "function": {"name": "search", "parameters": {"type": "object"}},
@@ -576,8 +563,7 @@ mod tests {
             ),
         ] {
             let mut value = document_value();
-            value["schema_version"] = json!(7);
-            value["prompt_versions"]["v1"]["tools"] = tools;
+            value["prompt_versions"]["greeting@2"]["tools"] = tools;
             let document = UseCaseDocument::from_value(&value).unwrap().0;
             assert!(
                 resolve(
@@ -593,9 +579,8 @@ mod tests {
         }
 
         let mut value = document_value();
-        value["schema_version"] = json!(7);
-        value["use_cases"]["greeting"]["default_params"]["tool_choice"] = json!("none");
-        value["prompt_versions"]["v1"]["tools"] = json!({
+        value["prompts"]["greeting"]["default_params"]["tool_choice"] = json!("none");
+        value["prompt_versions"]["greeting@2"]["tools"] = json!({
             "definitions": [{"type":"function", "function":{"name":"search", "parameters":{"type":"object"}}}],
             "tool_choice": "auto"
         });
@@ -617,22 +602,16 @@ mod tests {
         assert_eq!(resolution.params["temperature"], json!(0.2));
         assert_eq!(resolution.provider_options["only"], json!(["OpenAI"]));
         assert_eq!(resolution.provider_options["sort"], json!(null));
-        assert_eq!(resolution.available_prompts, vec!["default", "ko"]);
+        assert_eq!(resolution.available_prompts, vec!["default"]);
     }
 
     #[test]
     fn renders_the_pinned_prompt() {
-        let resolution = resolve_key(
-            "greeting",
-            ResolveOptions {
-                prompt: Some("ko".to_string()),
-            },
-        )
-        .unwrap();
-        let rendered = resolution.render(json!({"name": "아다"})).unwrap();
+        let resolution = resolve_key("greeting", ResolveOptions::default()).unwrap();
+        let rendered = resolution.render(json!({"name": "Ada"})).unwrap();
         match rendered {
             Rendered::Messages(messages) => {
-                assert_eq!(messages[0].content, "아다님 안녕.".to_string());
+                assert_eq!(messages[0].content, "Say hello to Ada.".to_string());
             }
             other => panic!("expected messages, got {other:?}"),
         }
@@ -654,7 +633,7 @@ mod tests {
                 ..
             } => {
                 assert_eq!(prompt, "fr");
-                assert_eq!(prompt_names, vec!["default", "ko"]);
+                assert_eq!(prompt_names, vec!["default"]);
             }
             other => panic!("expected UnknownPrompt, got {other:?}"),
         }

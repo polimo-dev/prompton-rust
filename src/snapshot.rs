@@ -1,9 +1,8 @@
-//! The use-case document: what `GET /api/v1/prompts?environment=…` returns, decoded.
+//! The runtime prompt configuration document, decoded.
 //!
-//! One request returns everything live in one environment — every deployment, the prompt versions
-//! and models they pin, and the use case metadata — and the SDK reads it locally. The
-//! SDK reads schema versions 4 through 9: stale disk caches, old bundles, missing versions and
-//! unsupported future schema versions are refused.
+//! The SDK reads schema version 1 only. Runtime HTTP fetches use the singular
+//! `GET /api/v1/prompts/:key` detail shape. Offline bundles may aggregate those details into keyed
+//! maps, but the lightweight `GET /api/v1/prompts` discovery list is not a loadable configuration.
 
 use std::collections::BTreeMap;
 
@@ -14,7 +13,7 @@ use serde_json::{Map, Value};
 use crate::template::Engine;
 
 /// The schema version this SDK reads.
-pub const SCHEMA_VERSION: i64 = 9;
+pub const SCHEMA_VERSION: i64 = 1;
 
 /// The default payload cap when a use case carries no `payload_policy`.
 pub const DEFAULT_MAX_BYTES: usize = 262_144;
@@ -195,9 +194,9 @@ impl<'de> Deserialize<'de> for Message {
     }
 }
 
-/// One entry of a use case's `input_schema`.
+/// One entry of a use case's `variables`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct InputVariable {
+pub struct VariableDefinition {
     /// The variable name used in the template.
     pub name: String,
     /// `string`, `number`, `boolean`, `list` or `map`.
@@ -207,6 +206,9 @@ pub struct InputVariable {
     /// Free-form documentation.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
+    /// Example value shown to people and generated snippets.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub example: Option<Value>,
 }
 
 /// How much of a model call's `input`/`output` may be stored.
@@ -259,8 +261,8 @@ pub struct UseCaseSpec {
     pub key: String,
     /// Chat, text or embedding.
     pub kind: Kind,
-    /// The declared input variables.
-    pub input_schema: Vec<InputVariable>,
+    /// The declared prompt variables.
+    pub variables: Vec<VariableDefinition>,
     /// Parameters every deployment of this use case starts from.
     pub default_params: Map<String, Value>,
     /// The payload storage policy, when the document carries one.
@@ -355,7 +357,7 @@ pub enum DecodeError {
     /// The JSON is not a use-case document.
     #[error("invalid use-case document: {0}")]
     Invalid(String),
-    /// Any document whose schema version is not exactly v4.
+    /// Any document whose schema version is not the current public contract.
     #[error("unsupported use-case document schema_version {0} (this SDK reads {SCHEMA_VERSION})")]
     UnsupportedSchemaVersion(i64),
 }
@@ -380,7 +382,7 @@ impl UseCaseDocument {
                 let version = version.as_i64().ok_or_else(|| {
                     DecodeError::Invalid("schema_version must be an integer".to_string())
                 })?;
-                if !(4..=SCHEMA_VERSION).contains(&version) {
+                if version != SCHEMA_VERSION {
                     return Err(DecodeError::UnsupportedSchemaVersion(version));
                 }
                 version
@@ -393,29 +395,34 @@ impl UseCaseDocument {
             None => {
                 return Err(DecodeError::Invalid(
                     "schema_version is required".to_string(),
-                ))
+                ));
             }
         };
 
         let normalized;
-        let map = if schema_version == 9 {
-            normalized = normalize_schema9_single_prompt(map)?;
+        let map = if ["prompt", "deployment", "prompt_version", "model"]
+            .iter()
+            .any(|key| map.contains_key(*key))
+        {
+            normalized = normalize_schema1_single_prompt(map)?;
             &normalized
         } else {
+            if let Some(Value::Array(_)) = map.get("prompts") {
+                return Err(DecodeError::Invalid(
+                    "prompt list responses are discovery-only and cannot be loaded as configuration"
+                        .to_string(),
+                ));
+            }
             map
         };
+        validate_schema1_references(map)?;
 
         let use_cases_raw = map
-            .get("use_cases")
-            .or_else(|| map.get("prompts"))
+            .get("prompts")
             .and_then(Value::as_object)
             .ok_or_else(|| {
-                DecodeError::Invalid("use_cases is required and must be an object".to_string())
+                DecodeError::Invalid("prompts is required and must be an object".to_string())
             })?;
-
-        if schema_version >= 8 {
-            validate_schema8_references(map)?;
-        }
 
         let mut use_cases = BTreeMap::new();
         for (key, raw) in use_cases_raw {
@@ -423,7 +430,7 @@ impl UseCaseDocument {
                 Some(raw) => {
                     use_cases.insert(key.clone(), decode_use_case(key, raw, &mut warnings));
                 }
-                None => warnings.push(format!("use case {key} is not an object")),
+                None => warnings.push(format!("prompt {key} is not an object")),
             }
         }
 
@@ -434,10 +441,7 @@ impl UseCaseDocument {
                     for (key, raw) in raw_map {
                         match raw.as_object() {
                             Some(raw) => {
-                                deployments.insert(
-                                    key.clone(),
-                                    decode_deployment(key, raw, schema_version)?,
-                                );
+                                deployments.insert(key.clone(), decode_deployment(key, raw)?);
                             }
                             None => warnings.push(format!("deployment {key} is not an object")),
                         }
@@ -455,7 +459,7 @@ impl UseCaseDocument {
             for (id, raw) in raw_map {
                 match raw.as_object() {
                     Some(raw) => {
-                        let version = decode_prompt_version(id, raw, schema_version);
+                        let version = decode_prompt_version(id, raw);
                         prompt_versions.insert(version.id.clone(), version);
                     }
                     None => warnings.push(format!("prompt version {id} is not an object")),
@@ -468,7 +472,7 @@ impl UseCaseDocument {
             for (id, raw) in raw_map {
                 match raw.as_object() {
                     Some(raw) => {
-                        let model = decode_model(id, raw, schema_version);
+                        let model = decode_model(id, raw);
                         models.insert(model.id.clone(), model);
                     }
                     None => warnings.push(format!("model {id} is not an object")),
@@ -505,11 +509,11 @@ impl UseCaseDocument {
 }
 
 fn decode_use_case(key: &str, raw: &Map<String, Value>, warnings: &mut Vec<String>) -> UseCaseSpec {
-    let mut input_schema = Vec::new();
-    if let Some(entries) = raw.get("input_schema").and_then(Value::as_array) {
+    let mut variables = Vec::new();
+    if let Some(entries) = raw.get("variables").and_then(Value::as_array) {
         for entry in entries {
             match entry.as_object() {
-                Some(entry) => input_schema.push(InputVariable {
+                Some(entry) => variables.push(VariableDefinition {
                     name: string_of(entry.get("name")).unwrap_or_default(),
                     r#type: string_of(entry.get("type")).unwrap_or_else(|| "string".to_string()),
                     required: entry
@@ -517,8 +521,9 @@ fn decode_use_case(key: &str, raw: &Map<String, Value>, warnings: &mut Vec<Strin
                         .and_then(Value::as_bool)
                         .unwrap_or(false),
                     description: string_of(entry.get("description")),
+                    example: entry.get("example").cloned(),
                 }),
-                None => warnings.push(format!("input_schema entry of {key} is not an object")),
+                None => warnings.push(format!("variables entry of {key} is not an object")),
             }
         }
     }
@@ -527,7 +532,7 @@ fn decode_use_case(key: &str, raw: &Map<String, Value>, warnings: &mut Vec<Strin
         id: string_of(raw.get("id")),
         key: key.to_string(),
         kind: Kind::from_wire(raw.get("kind").and_then(Value::as_str)),
-        input_schema,
+        variables,
         default_params: object_of(raw.get("default_params")),
         payload_policy: raw
             .get("payload_policy")
@@ -559,82 +564,75 @@ fn decode_payload_policy(raw: &Map<String, Value>) -> PayloadPolicy {
     }
 }
 
-fn validate_schema8_references(map: &Map<String, Value>) -> Result<(), DecodeError> {
-    let deployments = optional_object(map, "deployments")?;
-    let prompt_versions = optional_object(map, "prompt_versions")?;
-    let models = optional_object(map, "models")?;
+fn validate_schema1_references(map: &Map<String, Value>) -> Result<(), DecodeError> {
+    let deployments = required_collection_object(map, "deployments")?;
+    let prompt_versions = required_collection_object(map, "prompt_versions")?;
+    let models = required_collection_object(map, "models")?;
 
-    if let Some(prompt_versions) = prompt_versions {
-        for (key, raw) in prompt_versions {
-            let raw = raw.as_object().ok_or_else(|| {
-                DecodeError::Invalid(format!("prompt_versions.{key} must be an object"))
-            })?;
-            let prompt =
-                required_string(raw.get("prompt"), &format!("prompt_versions.{key}.prompt"))?;
-            let number =
-                strict_positive_i64(raw.get("number"), &format!("prompt_versions.{key}.number"))?;
-            let expected = format!("{prompt}@{number}");
-            if key != &expected {
-                return Err(DecodeError::Invalid(format!(
-                    "prompt_versions key {key} must match embedded prompt version {expected}"
-                )));
-            }
+    for (key, raw) in prompt_versions {
+        let raw = raw.as_object().ok_or_else(|| {
+            DecodeError::Invalid(format!("prompt_versions.{key} must be an object"))
+        })?;
+        let prompt = required_string(raw.get("prompt"), &format!("prompt_versions.{key}.prompt"))?;
+        let number =
+            strict_positive_i64(raw.get("number"), &format!("prompt_versions.{key}.number"))?;
+        let expected = format!("{prompt}@{number}");
+        if key != &expected {
+            return Err(DecodeError::Invalid(format!(
+                "prompt_versions key {key} must match embedded prompt version {expected}"
+            )));
         }
     }
 
-    if let Some(models) = models {
-        for (key, raw) in models {
-            let raw = raw
-                .as_object()
-                .ok_or_else(|| DecodeError::Invalid(format!("models.{key} must be an object")))?;
-            let provider = required_string(raw.get("provider"), &format!("models.{key}.provider"))?;
-            let model = required_string(raw.get("model"), &format!("models.{key}.model"))?;
-            let expected = format!("{provider}:{model}");
-            if key != &expected {
-                return Err(DecodeError::Invalid(format!(
-                    "models key {key} must match embedded model {expected}"
-                )));
-            }
+    for (key, raw) in models {
+        let raw = raw
+            .as_object()
+            .ok_or_else(|| DecodeError::Invalid(format!("models.{key} must be an object")))?;
+        let provider = required_string(raw.get("provider"), &format!("models.{key}.provider"))?;
+        let model = required_string(raw.get("model"), &format!("models.{key}.model"))?;
+        let expected = format!("{provider}:{model}");
+        if key != &expected {
+            return Err(DecodeError::Invalid(format!(
+                "models key {key} must match embedded model {expected}"
+            )));
         }
     }
 
-    if let Some(deployments) = deployments {
-        for (key, raw) in deployments {
-            let raw = raw.as_object().ok_or_else(|| {
-                DecodeError::Invalid(format!("deployments.{key} must be an object"))
-            })?;
-            let number = strict_positive_i64(
-                raw.get("prompt_version"),
-                &format!("deployments.{key}.prompt_version"),
-            )?;
-            let provider =
-                required_string(raw.get("provider"), &format!("deployments.{key}.provider"))?;
-            let model = required_string(raw.get("model"), &format!("deployments.{key}.model"))?;
-            let prompt_version_key = format!("{key}@{number}");
-            if !prompt_versions.is_some_and(|versions| versions.contains_key(&prompt_version_key)) {
-                return Err(DecodeError::Invalid(format!(
-                    "deployment {key} references missing prompt version {prompt_version_key}"
-                )));
-            }
-            let model_key = format!("{provider}:{model}");
-            if !models.is_some_and(|models| models.contains_key(&model_key)) {
-                return Err(DecodeError::Invalid(format!(
-                    "deployment {key} references missing model {model_key}"
-                )));
-            }
+    for (key, raw) in deployments {
+        let raw = raw
+            .as_object()
+            .ok_or_else(|| DecodeError::Invalid(format!("deployments.{key} must be an object")))?;
+        let number = strict_positive_i64(
+            raw.get("prompt_version"),
+            &format!("deployments.{key}.prompt_version"),
+        )?;
+        let provider =
+            required_string(raw.get("provider"), &format!("deployments.{key}.provider"))?;
+        let model = required_string(raw.get("model"), &format!("deployments.{key}.model"))?;
+        let prompt_version_key = format!("{key}@{number}");
+        if !prompt_versions.contains_key(&prompt_version_key) {
+            return Err(DecodeError::Invalid(format!(
+                "deployment {key} references missing prompt version {prompt_version_key}"
+            )));
+        }
+        let model_key = format!("{provider}:{model}");
+        if !models.contains_key(&model_key) {
+            return Err(DecodeError::Invalid(format!(
+                "deployment {key} references missing model {model_key}"
+            )));
         }
     }
 
     Ok(())
 }
 
-fn normalize_schema9_single_prompt(
+fn normalize_schema1_single_prompt(
     map: &Map<String, Value>,
 ) -> Result<Map<String, Value>, DecodeError> {
     for plural in ["prompts", "deployments", "prompt_versions", "models"] {
         if map.contains_key(plural) {
             return Err(DecodeError::Invalid(format!(
-                "schema 9 single prompt document must not include {plural}"
+                "schema 1 single prompt document must not include {plural}"
             )));
         }
     }
@@ -722,14 +720,14 @@ fn singleton_object(key: &str, value: Value) -> Map<String, Value> {
     map
 }
 
-fn optional_object<'a>(
+fn required_collection_object<'a>(
     map: &'a Map<String, Value>,
     key: &str,
-) -> Result<Option<&'a Map<String, Value>>, DecodeError> {
+) -> Result<&'a Map<String, Value>, DecodeError> {
     match map.get(key) {
-        Some(Value::Object(raw)) => Ok(Some(raw)),
-        Some(Value::Null) | None => Ok(None),
+        Some(Value::Object(raw)) => Ok(raw),
         Some(_) => Err(DecodeError::Invalid(format!("{key} must be an object"))),
+        None => Err(DecodeError::Invalid(format!("{key} is required"))),
     }
 }
 
@@ -759,46 +757,26 @@ fn strict_positive_i64(value: Option<&Value>, field: &str) -> Result<i64, Decode
     }
 }
 
-fn decode_deployment(
-    key: &str,
-    raw: &Map<String, Value>,
-    schema_version: i64,
-) -> Result<Deployment, DecodeError> {
+fn decode_deployment(key: &str, raw: &Map<String, Value>) -> Result<Deployment, DecodeError> {
+    let number = strict_positive_i64(
+        raw.get("prompt_version"),
+        &format!("deployment {key} prompt_version"),
+    )?;
     let mut prompt_pins = BTreeMap::new();
-    if schema_version >= 8 {
-        let number = strict_positive_i64(
-            raw.get("prompt_version"),
-            &format!("deployment {key} prompt_version"),
-        )?;
-        prompt_pins.insert("default".to_string(), format!("{key}@{number}"));
-    } else if let Some(pins) = raw
-        .get("prompt_pins")
-        .or_else(|| raw.get("template_pins"))
-        .and_then(Value::as_object)
-    {
-        for (name, version_id) in pins {
-            if let Some(version_id) = version_id.as_str() {
-                prompt_pins.insert(name.clone(), version_id.to_string());
-            }
-        }
-    }
+    prompt_pins.insert("default".to_string(), format!("{key}@{number}"));
 
     Ok(Deployment {
-        id: string_of(raw.get("id")),
-        use_case_key: string_of(raw.get("use_case_key")).unwrap_or_else(|| key.to_string()),
+        id: None,
+        use_case_key: key.to_string(),
         revision: revision_of(raw.get("revision"))?,
-        model_id: if schema_version >= 8 {
-            readable_model_key(raw)
-        } else {
-            string_of(raw.get("model_id"))
-        },
+        model_id: readable_model_key(raw),
         params: object_of(raw.get("params")),
         provider_options: object_of(raw.get("provider_options")),
         prompt_pins,
     })
 }
 
-fn decode_prompt_version(id: &str, raw: &Map<String, Value>, schema_version: i64) -> PromptVersion {
+fn decode_prompt_version(id: &str, raw: &Map<String, Value>) -> PromptVersion {
     let messages = raw
         .get("messages")
         .and_then(Value::as_array)
@@ -811,16 +789,8 @@ fn decode_prompt_version(id: &str, raw: &Map<String, Value>, schema_version: i64
         });
 
     PromptVersion {
-        id: if schema_version >= 8 {
-            readable_prompt_version_key(id, raw)
-        } else {
-            string_of(raw.get("id")).unwrap_or_else(|| id.to_string())
-        },
-        prompt_id: if schema_version >= 8 {
-            string_of(raw.get("prompt"))
-        } else {
-            string_of(raw.get("prompt_id"))
-        },
+        id: readable_prompt_version_key(id, raw),
+        prompt_id: string_of(raw.get("prompt")),
         number: raw.get("number").and_then(Value::as_i64),
         engine: Engine::from_wire(raw.get("engine").and_then(Value::as_str)),
         messages,
@@ -829,19 +799,11 @@ fn decode_prompt_version(id: &str, raw: &Map<String, Value>, schema_version: i64
     }
 }
 
-fn decode_model(id: &str, raw: &Map<String, Value>, schema_version: i64) -> Model {
+fn decode_model(_id: &str, raw: &Map<String, Value>) -> Model {
     Model {
-        id: if schema_version >= 8 {
-            readable_model_key(raw).unwrap_or_else(|| id.to_string())
-        } else {
-            string_of(raw.get("id")).unwrap_or_else(|| id.to_string())
-        },
+        id: readable_model_key(raw).unwrap_or_default(),
         provider: string_of(raw.get("provider")),
-        model_id: if schema_version >= 8 {
-            string_of(raw.get("model"))
-        } else {
-            string_of(raw.get("model_id"))
-        },
+        model_id: string_of(raw.get("model")),
         display_name: string_of(raw.get("display_name")),
         metadata: object_of(raw.get("metadata")),
         provider_options: object_of(raw.get("provider_options")),
@@ -860,7 +822,7 @@ fn decode_model(id: &str, raw: &Map<String, Value>, schema_version: i64) -> Mode
     }
 }
 
-fn readable_prompt_version_key(id: &str, raw: &Map<String, Value>) -> String {
+fn readable_prompt_version_key(_id: &str, raw: &Map<String, Value>) -> String {
     match (
         string_of(raw.get("prompt")),
         raw.get("number")
@@ -868,7 +830,7 @@ fn readable_prompt_version_key(id: &str, raw: &Map<String, Value>) -> String {
             .filter(|number| *number > 0),
     ) {
         (Some(prompt), Some(number)) => format!("{prompt}@{number}"),
-        _ => id.to_string(),
+        _ => String::new(),
     }
 }
 
@@ -910,30 +872,32 @@ mod tests {
 
     fn document() -> Value {
         json!({
-            "schema_version": 4,
+            "schema_version": 1,
             "project": "demo",
             "environment": "production",
-            "use_cases": {
+            "prompts": {
                 "greeting": {
-                    "id": "u1", "kind": "chat",
-                    "input_schema": [{"name": "name", "type": "string", "required": true}],
+                    "key": "greeting",
+                    "kind": "chat",
+                    "variables": [{"name": "name", "type": "string", "required": true,
+                                   "description": "Display name", "example": "Ada"}],
                     "default_params": {"max_tokens": 512},
                     "payload_policy": {"mode": "hash", "sample_rate": 0.5, "max_bytes": 1024,
                                        "retention_days": 30, "encrypt": true}
                 }
             },
             "deployments": {
-                "greeting": {"id": "d1", "revision": "v2026.09.30-3", "model_id": "m1",
-                             "params": {"temperature": 0.4}, "provider_options": {},
-                             "prompt_pins": {"default": "v1", "ko": "v2"}}
+                "greeting": {"revision": "v2026.09.30-3", "provider": "openrouter",
+                             "model": "openai/gpt-4o-mini", "prompt_version": 2,
+                             "params": {"temperature": 0.4}, "provider_options": {}}
             },
             "prompt_versions": {
-                "v1": {"id": "v1", "number": 2, "engine": "liquid",
+                "greeting@2": {"prompt": "greeting", "number": 2, "engine": "liquid",
                        "messages": [{"role": "user", "content": "hi {{ name }}"}],
                        "text_template": null}
             },
             "models": {
-                "m1": {"id": "m1", "provider": "openrouter", "model_id": "openai/gpt-4o-mini",
+                "openrouter:openai/gpt-4o-mini": {"provider": "openrouter", "model": "openai/gpt-4o-mini",
                        "provider_options": {"only": ["OpenAI"]}, "capabilities": ["tools"],
                        "status": "active"}
             }
@@ -941,12 +905,22 @@ mod tests {
     }
 
     #[test]
-    fn decodes_a_v4_document() {
+    fn decodes_schema_one_aggregate_document() {
         let (doc, warnings) = UseCaseDocument::from_value(&document()).unwrap();
         assert!(warnings.is_empty());
         assert_eq!(doc.environment.as_deref(), Some("production"));
         assert_eq!(doc.use_cases["greeting"].kind, Kind::Chat);
-        assert_eq!(doc.prompt_names("greeting"), vec!["default", "ko"]);
+        assert_eq!(doc.prompt_names("greeting"), vec!["default"]);
+        assert_eq!(
+            doc.use_cases["greeting"].variables[0]
+                .description
+                .as_deref(),
+            Some("Display name")
+        );
+        assert_eq!(
+            doc.use_cases["greeting"].variables[0].example,
+            Some(json!("Ada"))
+        );
         assert_eq!(
             doc.use_cases["greeting"]
                 .payload_policy
@@ -956,13 +930,15 @@ mod tests {
             PayloadMode::Hash
         );
         assert_eq!(
-            doc.models["m1"].model_id.as_deref(),
+            doc.models["openrouter:openai/gpt-4o-mini"]
+                .model_id
+                .as_deref(),
             Some("openai/gpt-4o-mini")
         );
     }
 
     #[test]
-    fn refuses_older_schema_versions() {
+    fn refuses_non_current_schema_versions() {
         let mut value = document();
         value["schema_version"] = json!(3);
         assert_eq!(
@@ -972,25 +948,33 @@ mod tests {
     }
 
     #[test]
-    fn accepts_schema_versions_through_nine_and_refuses_future() {
-        for version in [5, 6, 7] {
-            let mut value = document();
-            value["schema_version"] = json!(version);
-            assert!(UseCaseDocument::from_value(&value).is_ok());
-        }
+    fn accepts_schema_one_shapes_and_refuses_future_or_list() {
+        assert!(UseCaseDocument::from_value(&document()).is_ok());
         assert!(UseCaseDocument::from_value(&readable_document()).is_ok());
         assert!(UseCaseDocument::from_value(&readable_single_document("greeting")).is_ok());
+
         let mut value = document();
         value["schema_version"] = json!(10);
         assert_eq!(
             UseCaseDocument::from_value(&value),
             Err(DecodeError::UnsupportedSchemaVersion(10))
         );
+
+        let list = json!({
+            "schema_version": 1,
+            "project": "demo",
+            "environment": "production",
+            "prompts": [{"key": "greeting", "kind": "chat"}]
+        });
+        assert!(matches!(
+            UseCaseDocument::from_value(&list),
+            Err(DecodeError::Invalid(message)) if message.contains("discovery-only")
+        ));
     }
 
     fn readable_document() -> Value {
         json!({
-            "schema_version": 8,
+            "schema_version": 1,
             "project": "demo",
             "environment": "production",
             "prompts": {
@@ -1024,12 +1008,12 @@ mod tests {
     }
 
     #[test]
-    fn decodes_schema_eight_readable_resource_keys() {
+    fn decodes_schema_one_readable_resource_keys() {
         let value = readable_document();
 
         let (doc, warnings) = UseCaseDocument::from_value(&value).unwrap();
         assert!(warnings.is_empty());
-        assert_eq!(doc.schema_version, 8);
+        assert_eq!(doc.schema_version, 1);
         assert_eq!(doc.deployments["greeting"].id, None);
         assert_eq!(
             doc.deployments["greeting"].model_id.as_deref(),
@@ -1053,7 +1037,7 @@ mod tests {
 
     fn readable_single_document(key: &str) -> Value {
         json!({
-            "schema_version": 9,
+            "schema_version": 1,
             "project": "demo",
             "environment": "production",
             "prompt": {
@@ -1083,12 +1067,12 @@ mod tests {
     }
 
     #[test]
-    fn decodes_schema_nine_single_prompt_document() {
+    fn decodes_schema_one_single_prompt_document() {
         let value = readable_single_document("greeting");
 
         let (doc, warnings) = UseCaseDocument::from_value(&value).unwrap();
         assert!(warnings.is_empty());
-        assert_eq!(doc.schema_version, 9);
+        assert_eq!(doc.schema_version, 1);
         assert_eq!(doc.use_cases["greeting"].key, "greeting");
         assert_eq!(
             doc.deployments["greeting"].model_id.as_deref(),
@@ -1105,7 +1089,7 @@ mod tests {
     }
 
     #[test]
-    fn decodes_schema_nine_decision_kind_as_an_unknown_kind() {
+    fn decodes_schema_one_decision_kind_as_an_unknown_kind() {
         let mut value = readable_single_document("route");
         value["prompt"]["kind"] = json!("decision");
         value["prompt_version"]["kind"] = json!("decision");
@@ -1119,7 +1103,7 @@ mod tests {
     }
 
     #[test]
-    fn schema_nine_rejects_mixed_or_mismatched_single_prompt_documents() {
+    fn schema_one_rejects_mixed_or_mismatched_single_prompt_documents() {
         let mut mixed = readable_single_document("greeting");
         mixed["prompts"] = json!({});
         assert!(matches!(
@@ -1150,7 +1134,46 @@ mod tests {
     }
 
     #[test]
-    fn schema_eight_requires_strict_readable_refs() {
+    fn schema_one_requires_all_aggregate_collections_and_rejects_partial_mixed_shape() {
+        for key in ["deployments", "prompt_versions", "models"] {
+            let mut missing = readable_document();
+            missing.as_object_mut().unwrap().remove(key);
+            assert!(matches!(
+                UseCaseDocument::from_value(&missing),
+                Err(DecodeError::Invalid(message)) if message.contains(&format!("{key} is required"))
+            ));
+
+            let mut array = readable_document();
+            array[key] = json!([]);
+            assert!(matches!(
+                UseCaseDocument::from_value(&array),
+                Err(DecodeError::Invalid(message)) if message.contains(&format!("{key} must be an object"))
+            ));
+        }
+
+        let empty = json!({
+            "schema_version": 1,
+            "project": "demo",
+            "environment": "production",
+            "prompts": {},
+            "deployments": {},
+            "prompt_versions": {},
+            "models": {}
+        });
+        let (doc, warnings) = UseCaseDocument::from_value(&empty).unwrap();
+        assert!(warnings.is_empty());
+        assert!(doc.use_cases.is_empty());
+
+        let mut partial_mixed = readable_document();
+        partial_mixed["deployment"] = json!({});
+        assert!(matches!(
+            UseCaseDocument::from_value(&partial_mixed),
+            Err(DecodeError::Invalid(message)) if message.contains("must not include prompts")
+        ));
+    }
+
+    #[test]
+    fn schema_one_requires_strict_readable_refs() {
         let mut string_pin = readable_document();
         string_pin["deployments"]["greeting"]["prompt_version"] = json!("2");
         assert!(matches!(
@@ -1210,7 +1233,7 @@ mod tests {
         );
 
         let mut text = document();
-        text["schema_version"] = json!("4");
+        text["schema_version"] = json!("1");
         assert_eq!(
             UseCaseDocument::from_value(&text),
             Err(DecodeError::Invalid(

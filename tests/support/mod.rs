@@ -242,66 +242,19 @@ pub fn greeting_document() -> Value {
 
 /// A use-case document for the tests, with one chat use case and one prompt name per language.
 pub fn document_json(environment: &str, project: &str, greeting: &str) -> String {
-    serde_json::json!({
-        "schema_version": 4,
-        "project": project,
-        "environment": environment,
-        "use_cases": {
-            "greeting": {
-                "id": "0198f2a1-0000-7000-8000-00000000c001",
-                "kind": "chat",
-                "input_schema": [{"name": "name", "type": "string", "required": true}],
-                "default_params": {"max_tokens": 512},
-                "payload_policy": {"mode": "full", "sample_rate": 1.0, "max_bytes": 262144,
-                                   "retention_days": 30, "encrypt": true}
-            }
-        },
-        "deployments": {
-            "greeting": {
-                "id": "0198f2a1-0000-7000-8000-00000000d001",
-                "revision": "v2026.09.30-3",
-                "model_id": "0198f2a1-0000-7000-8000-00000000e001",
-                "params": {"temperature": 0.2},
-                "provider_options": {},
-                "prompt_pins": {"default": "0198f2a1-0000-7000-8000-00000000a001"}
-            }
-        },
-        "prompt_versions": {
-            "0198f2a1-0000-7000-8000-00000000a001": {
-                "id": "0198f2a1-0000-7000-8000-00000000a001",
-                "prompt_id": "0198f2a1-0000-7000-8000-00000000b001",
-                "number": 2,
-                "engine": "liquid",
-                "messages": [{"role": "user", "content": greeting}],
-                "text_template": null
-            }
-        },
-        "models": {
-            "0198f2a1-0000-7000-8000-00000000e001": {
-                "id": "0198f2a1-0000-7000-8000-00000000e001",
-                "provider": "openrouter",
-                "model_id": "openai/gpt-4o-mini",
-                "display_name": "GPT-4o mini",
-                "metadata": {},
-                "provider_options": {"only": ["OpenAI"]},
-                "capabilities": ["tools"],
-                "status": "active"
-            }
-        }
-    })
-    .to_string()
+    readable_document_json(environment, project, greeting)
 }
 
-/// A schema v8 document with readable resource references.
+/// A schema v1 document with readable resource references.
 pub fn readable_document_json(environment: &str, project: &str, greeting: &str) -> String {
     serde_json::json!({
-        "schema_version": 8,
+        "schema_version": 1,
         "project": project,
         "environment": environment,
         "prompts": {
             "greeting": {
                 "kind": "chat",
-                "input_schema": [{"name": "name", "type": "string", "required": true}],
+                "variables": [{"name": "name", "type": "string", "required": true}],
                 "default_params": {"max_tokens": 512},
                 "payload_policy": {"mode": "full", "sample_rate": 1.0, "max_bytes": 262144}
             }
@@ -339,16 +292,16 @@ pub fn readable_document_json(environment: &str, project: &str, greeting: &str) 
     .to_string()
 }
 
-/// A schema v9 single-prompt document with readable resource references.
+/// A schema v1 single-prompt document with readable resource references.
 pub fn readable_single_document_json(environment: &str, project: &str, greeting: &str) -> String {
     serde_json::json!({
-        "schema_version": 9,
+        "schema_version": 1,
         "project": project,
         "environment": environment,
         "prompt": {
             "key": "greeting",
             "kind": "chat",
-            "input_schema": [{"name": "name", "type": "string", "required": true}],
+            "variables": [{"name": "name", "type": "string", "required": true}],
             "default_params": {"max_tokens": 512},
             "payload_policy": {"mode": "full", "sample_rate": 1.0, "max_bytes": 262144}
         },

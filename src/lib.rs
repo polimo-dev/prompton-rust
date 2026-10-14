@@ -78,8 +78,8 @@ pub use crate::record::{
 };
 pub use crate::resolver::{Source, DEFAULT_PROMPT};
 pub use crate::snapshot::{
-    Deployment, InputVariable, Kind, Message, Model, PayloadMode, PayloadPolicy, PromptVersion,
-    UseCaseDocument, UseCaseSpec, SCHEMA_VERSION,
+    Deployment, Kind, Message, Model, PayloadMode, PayloadPolicy, PromptVersion, UseCaseDocument,
+    UseCaseSpec, VariableDefinition, SCHEMA_VERSION,
 };
 pub use crate::stop_kind::StopKind;
 pub use crate::store::UseCaseDocumentInfo;

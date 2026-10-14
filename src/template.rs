@@ -323,7 +323,7 @@ fn message_of(err: &TemplateError) -> String {
     }
 }
 
-/// The top-level input variables a template reads, sorted and deduplicated.
+/// The top-level variables a template reads, sorted and deduplicated.
 ///
 /// `for` loop variables, `assign` targets and `forloop` are excluded, which makes this the list an
 /// app should be able to supply (the server records the same list as `detected_variables`).

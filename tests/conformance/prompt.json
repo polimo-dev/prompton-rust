@@ -4,7 +4,7 @@
       "document_ref": "production",
       "environment": "production",
       "expect": {
-        "deployment_id": "0198f2a1-0000-7000-8000-00000000d001",
+        "deployment_id": null,
         "key": "greeting",
         "kind": "chat",
         "messages": [
@@ -18,15 +18,12 @@
           }
         ],
         "model": "openai/gpt-4o-mini",
-        "model_id": "0198f2a1-0000-7000-8000-00000000e001",
+        "model_id": null,
         "params": {
           "max_tokens": 512,
           "temperature": 0.2
         },
-        "prompt_version": {
-          "id": "0198f2a1-0000-7000-8000-00000000a001",
-          "number": 2
-        },
+        "prompt_version": null,
         "provider": "openrouter",
         "provider_options": {
           "allow_fallbacks": true,
@@ -39,8 +36,7 @@
         "source": "remote",
         "template": "default",
         "template_names": [
-          "default",
-          "ko"
+          "default"
         ],
         "warnings": []
       },
@@ -52,7 +48,7 @@
       "document_ref": "production",
       "environment": "production",
       "expect": {
-        "deployment_id": "0198f2a1-0000-7000-8000-00000000d001",
+        "deployment_id": null,
         "key": "greeting",
         "kind": "chat",
         "messages": [
@@ -66,15 +62,12 @@
           }
         ],
         "model": "openai/gpt-4o-mini",
-        "model_id": "0198f2a1-0000-7000-8000-00000000e001",
+        "model_id": null,
         "params": {
           "max_tokens": 512,
           "temperature": 0.2
         },
-        "prompt_version": {
-          "id": "0198f2a1-0000-7000-8000-00000000a001",
-          "number": 2
-        },
+        "prompt_version": null,
         "provider": "openrouter",
         "provider_options": {
           "allow_fallbacks": true,
@@ -87,8 +80,7 @@
         "source": "remote",
         "template": "default",
         "template_names": [
-          "default",
-          "ko"
+          "default"
         ],
         "warnings": []
       },
@@ -102,59 +94,7 @@
       "document_ref": "production",
       "environment": "production",
       "expect": {
-        "deployment_id": "0198f2a1-0000-7000-8000-00000000d001",
-        "key": "greeting",
-        "kind": "chat",
-        "messages": [
-          {
-            "content": "너는 친절한 인사 도우미다. 한 줄로 답한다.",
-            "role": "system"
-          },
-          {
-            "content": "아다님에게 인사해줘.",
-            "role": "user"
-          }
-        ],
-        "model": "openai/gpt-4o-mini",
-        "model_id": "0198f2a1-0000-7000-8000-00000000e001",
-        "params": {
-          "max_tokens": 512,
-          "temperature": 0.2
-        },
-        "prompt_version": {
-          "id": "0198f2a1-0000-7000-8000-00000000a002",
-          "number": 1
-        },
-        "provider": "openrouter",
-        "provider_options": {
-          "allow_fallbacks": true,
-          "only": [
-            "OpenAI"
-          ],
-          "sort": null
-        },
-        "revision": "v2026.09.30-3",
-        "source": "remote",
-        "template": "ko",
-        "template_names": [
-          "default",
-          "ko"
-        ],
-        "warnings": []
-      },
-      "name": "chat/named_prompt_rendered",
-      "note": "the template name is the only selection axis; this is how language branching works",
-      "prompt_key": "greeting",
-      "template": "ko",
-      "variables": {
-        "name": "아다"
-      }
-    },
-    {
-      "document_ref": "production",
-      "environment": "production",
-      "expect": {
-        "deployment_id": "0198f2a1-0000-7000-8000-00000000d001",
+        "deployment_id": null,
         "key": "greeting",
         "kind": "chat",
         "messages": [
@@ -168,15 +108,12 @@
           }
         ],
         "model": "openai/gpt-4o-mini",
-        "model_id": "0198f2a1-0000-7000-8000-00000000e001",
+        "model_id": null,
         "params": {
           "max_tokens": 512,
           "temperature": 0.2
         },
-        "prompt_version": {
-          "id": "0198f2a1-0000-7000-8000-00000000a001",
-          "number": 2
-        },
+        "prompt_version": null,
         "provider": "openrouter",
         "provider_options": {
           "allow_fallbacks": true,
@@ -189,8 +126,7 @@
         "source": "remote",
         "template": "default",
         "template_names": [
-          "default",
-          "ko"
+          "default"
         ],
         "warnings": []
       },
@@ -217,7 +153,7 @@
       "document_ref": "production",
       "environment": "production",
       "expect": {
-        "deployment_id": "0198f2a1-0000-7000-8000-00000000d004",
+        "deployment_id": null,
         "key": "tool_chat",
         "kind": "chat",
         "messages": [
@@ -226,6 +162,7 @@
             "role": "system"
           },
           {
+            "content": null,
             "role": "assistant",
             "tool_calls": [
               {
@@ -236,8 +173,7 @@
                 "id": "call_search",
                 "type": "function"
               }
-            ],
-            "content": null
+            ]
           },
           {
             "content": [
@@ -255,12 +191,9 @@
           }
         ],
         "model": "openai/gpt-4o-mini",
-        "model_id": "0198f2a1-0000-7000-8000-00000000e001",
+        "model_id": null,
         "params": {},
-        "prompt_version": {
-          "id": "0198f2a1-0000-7000-8000-00000000a005",
-          "number": 1
-        },
+        "prompt_version": null,
         "provider": "openrouter",
         "provider_options": {
           "allow_fallbacks": false,
@@ -287,12 +220,30 @@
       "document_ref": "production",
       "environment": "production",
       "expect": {
+        "error": "render_error",
+        "message": "Message slots are not supported; compose conversation history in app code."
+      },
+      "name": "chat/legacy_message_slot_rejected",
+      "note": "message-history slots are retired; apps compose conversation history with rendered PromptOn-managed messages before the provider call",
+      "prompt_key": "legacy_slot",
+      "variables": {
+        "history": [
+          {
+            "content": "old turn",
+            "role": "assistant"
+          }
+        ]
+      }
+    },
+    {
+      "document_ref": "production",
+      "environment": "production",
+      "expect": {
         "error": "unknown_template",
         "key": "greeting",
         "template": "fr",
         "template_names": [
-          "default",
-          "ko"
+          "default"
         ]
       },
       "name": "chat/unpinned_prompt_name",
@@ -304,18 +255,15 @@
       "document_ref": "production",
       "environment": "production",
       "expect": {
-        "deployment_id": "0198f2a1-0000-7000-8000-00000000d002",
+        "deployment_id": null,
         "key": "summarize",
         "kind": "text",
         "model": "openai/gpt-4o-mini",
-        "model_id": "0198f2a1-0000-7000-8000-00000000e001",
+        "model_id": null,
         "params": {
           "temperature": 0.0
         },
-        "prompt_version": {
-          "id": "0198f2a1-0000-7000-8000-00000000a003",
-          "number": 4
-        },
+        "prompt_version": null,
         "provider": "openrouter",
         "provider_options": {
           "allow_fallbacks": false,
@@ -346,18 +294,15 @@
       "document_ref": "production",
       "environment": "production",
       "expect": {
-        "deployment_id": "0198f2a1-0000-7000-8000-00000000d002",
+        "deployment_id": null,
         "key": "summarize",
         "kind": "text",
         "model": "openai/gpt-4o-mini",
-        "model_id": "0198f2a1-0000-7000-8000-00000000e001",
+        "model_id": null,
         "params": {
           "temperature": 0.0
         },
-        "prompt_version": {
-          "id": "0198f2a1-0000-7000-8000-00000000a003",
-          "number": 4
-        },
+        "prompt_version": null,
         "provider": "openrouter",
         "provider_options": {
           "allow_fallbacks": false,
@@ -376,57 +321,6 @@
       },
       "name": "text/raw_template_without_variables",
       "prompt_key": "summarize"
-    },
-    {
-      "document_ref": "production",
-      "environment": "production",
-      "expect": {
-        "deployment_id": "0198f2a1-0000-7000-8000-00000000d003",
-        "key": "embed",
-        "kind": "embedding",
-        "model": "openai/text-embedding-3-small",
-        "model_id": "0198f2a1-0000-7000-8000-00000000e002",
-        "params": {
-          "dimensions": 256
-        },
-        "prompt_version": null,
-        "provider": "openrouter",
-        "provider_options": {},
-        "revision": "v2026.09.30-2",
-        "source": "remote",
-        "template": null,
-        "template_names": [],
-        "warnings": []
-      },
-      "name": "embedding/no_prompt",
-      "note": "kind embedding resolves the model only: template and prompt_version are null",
-      "prompt_key": "embed"
-    },
-    {
-      "document_ref": "production",
-      "environment": "production",
-      "expect": {
-        "deployment_id": "0198f2a1-0000-7000-8000-00000000d003",
-        "key": "embed",
-        "kind": "embedding",
-        "model": "openai/text-embedding-3-small",
-        "model_id": "0198f2a1-0000-7000-8000-00000000e002",
-        "params": {
-          "dimensions": 256
-        },
-        "prompt_version": null,
-        "provider": "openrouter",
-        "provider_options": {},
-        "revision": "v2026.09.30-2",
-        "source": "remote",
-        "template": null,
-        "template_names": [],
-        "warnings": []
-      },
-      "name": "embedding/prompt_name_is_ignored",
-      "note": "a template name given for an embedding prompt is ignored, not an error",
-      "prompt_key": "embed",
-      "template": "ko"
     },
     {
       "document_ref": "production",
@@ -451,7 +345,7 @@
       "document_ref": "staging",
       "environment": "staging",
       "expect": {
-        "deployment_id": "0198f2a1-0000-7000-8000-00000000d011",
+        "deployment_id": null,
         "key": "greeting",
         "kind": "chat",
         "messages": [
@@ -465,16 +359,13 @@
           }
         ],
         "model": "openai/gpt-4o-mini",
-        "model_id": "0198f2a1-0000-7000-8000-00000000e001",
+        "model_id": null,
         "params": {
           "max_tokens": 512,
           "temperature": 0.9,
           "top_p": 0.8
         },
-        "prompt_version": {
-          "id": "0198f2a1-0000-7000-8000-00000000a004",
-          "number": 3
-        },
+        "prompt_version": null,
         "provider": "openrouter",
         "provider_options": {
           "allow_fallbacks": false,
@@ -511,151 +402,66 @@
       "name": "staging/prompt_pinned_only_in_production",
       "prompt_key": "greeting",
       "template": "ko"
-    },
-    {
-      "document_ref": "degraded",
-      "environment": "production",
-      "expect": {
-        "deployment_id": "0198f2a1-0000-7000-8000-00000000d021",
-        "key": "greeting",
-        "kind": "chat",
-        "model": null,
-        "model_id": null,
-        "params": {
-          "temperature": 0.4
-        },
-        "prompt_version": null,
-        "provider": null,
-        "provider_options": {
-          "only": [
-            "OpenAI"
-          ]
-        },
-        "revision": "v2026.09.30-1",
-        "source": "remote",
-        "template": "default",
-        "template_names": [
-          "default"
-        ],
-        "warnings": [
-          "missing_prompt_version: 0198f2a1-0000-7000-8000-0000000000ff",
-          "missing_model: 0198f2a1-0000-7000-8000-0000000000fe"
-        ]
-      },
-      "name": "degraded/missing_prompt_version_and_model",
-      "note": "the document references ids it does not contain: prompt selection still succeeds, with warnings and null fields",
-      "prompt_key": "greeting"
     }
   ],
   "conformance": "prompt",
   "default_template": "default",
-  "description": "Prompt selection: prompt document + prompt (+ template name) -> which model, params and template version to use, then filling when `variables` is present. This is exactly what POST /api/v1/prompts/{key}/render does on the server.",
+  "description": "Prompt resolution fixtures for schema v1 readable prompt documents.",
   "document_notes": {
-    "degraded": "Synthetic. The deployment points at a template version id and a model id the document does not contain, to pin down the warning path. A healthy server never emits this.",
-    "production": "The everyday shape: three deployed prompts (chat with two template names, text, embedding) plus one prompt that has never been deployed. Field for field what GET /prompts returns.",
-    "staging": "The same project in another environment: one prompt, a different revision, different params and only the default template pinned."
+    "production": "Readable schema v1 aggregate with default-pinned chat and text prompts.",
+    "staging": "Readable schema v1 aggregate for the same prompt key in another environment."
   },
   "documents": {
-    "degraded": {
-      "deployments": {
-        "greeting": {
-          "id": "0198f2a1-0000-7000-8000-00000000d021",
-          "model_id": "0198f2a1-0000-7000-8000-0000000000fe",
-          "params": {},
-          "provider_options": {
-            "only": [
-              "OpenAI"
-            ]
-          },
-          "revision": "v2026.09.30-1",
-          "template_pins": {
-            "default": "0198f2a1-0000-7000-8000-0000000000ff"
-          }
-        }
-      },
-      "environment": "production",
-      "models": {},
-      "project": "sdkfixture",
-      "prompt_versions": {},
-      "prompts": {
-        "greeting": {
-          "default_params": {
-            "temperature": 0.4
-          },
-          "id": "0198f2a1-0000-7000-8000-00000000c001",
-          "input_schema": [],
-          "kind": "chat",
-          "payload_policy": {
-            "encrypt": false,
-            "max_bytes": 262144,
-            "mode": "full",
-            "retention_days": 30,
-            "sample_rate": 1.0
-          }
-        }
-      },
-      "schema_version": 5
-    },
     "production": {
       "deployments": {
-        "embed": {
-          "id": "0198f2a1-0000-7000-8000-00000000d003",
-          "model_id": "0198f2a1-0000-7000-8000-00000000e002",
-          "params": {
-            "dimensions": 256
-          },
-          "provider_options": {},
-          "revision": "v2026.09.30-2",
-          "template_pins": {}
-        },
         "greeting": {
-          "id": "0198f2a1-0000-7000-8000-00000000d001",
-          "model_id": "0198f2a1-0000-7000-8000-00000000e001",
+          "model": "openai/gpt-4o-mini",
           "params": {
             "temperature": 0.2
           },
+          "prompt_version": 2,
+          "provider": "openrouter",
           "provider_options": {
             "allow_fallbacks": true,
             "sort": null
           },
-          "revision": "v2026.09.30-3",
-          "template_pins": {
-            "default": "0198f2a1-0000-7000-8000-00000000a001",
-            "ko": "0198f2a1-0000-7000-8000-00000000a002"
-          }
+          "revision": "v2026.09.30-3"
+        },
+        "legacy_slot": {
+          "model": "openai/gpt-4o-mini",
+          "params": {},
+          "prompt_version": 1,
+          "provider": "openrouter",
+          "provider_options": {},
+          "revision": "v2026.09.30-1"
         },
         "summarize": {
-          "id": "0198f2a1-0000-7000-8000-00000000d002",
-          "model_id": "0198f2a1-0000-7000-8000-00000000e001",
+          "model": "openai/gpt-4o-mini",
           "params": {},
+          "prompt_version": 4,
+          "provider": "openrouter",
           "provider_options": {},
-          "revision": "v2026.09.30-1",
-          "template_pins": {
-            "default": "0198f2a1-0000-7000-8000-00000000a003"
-          }
+          "revision": "v2026.09.30-1"
         },
         "tool_chat": {
-          "id": "0198f2a1-0000-7000-8000-00000000d004",
-          "model_id": "0198f2a1-0000-7000-8000-00000000e001",
+          "model": "openai/gpt-4o-mini",
           "params": {},
+          "prompt_version": 1,
+          "provider": "openrouter",
           "provider_options": {},
-          "revision": "v2026.09.30-1",
-          "template_pins": {
-            "default": "0198f2a1-0000-7000-8000-00000000a005"
-          }
+          "revision": "v2026.09.30-1"
         }
       },
       "environment": "production",
       "models": {
-        "0198f2a1-0000-7000-8000-00000000e001": {
+        "openrouter:openai/gpt-4o-mini": {
           "capabilities": [
             "tools",
             "streaming"
           ],
           "display_name": "GPT-4o mini",
-          "id": "0198f2a1-0000-7000-8000-00000000e001",
           "metadata": {},
-          "model_id": "openai/gpt-4o-mini",
+          "model": "openai/gpt-4o-mini",
           "provider": "openrouter",
           "provider_options": {
             "allow_fallbacks": false,
@@ -665,12 +471,11 @@
           },
           "status": "active"
         },
-        "0198f2a1-0000-7000-8000-00000000e002": {
+        "openrouter:openai/text-embedding-3-small": {
           "capabilities": [],
           "display_name": "text-embedding-3-small",
-          "id": "0198f2a1-0000-7000-8000-00000000e002",
           "metadata": {},
-          "model_id": "openai/text-embedding-3-small",
+          "model": "openai/text-embedding-3-small",
           "provider": "openrouter",
           "provider_options": {},
           "status": "active"
@@ -678,9 +483,9 @@
       },
       "project": "sdkfixture",
       "prompt_versions": {
-        "0198f2a1-0000-7000-8000-00000000a001": {
+        "greeting@2": {
           "engine": "liquid",
-          "id": "0198f2a1-0000-7000-8000-00000000a001",
+          "kind": "chat",
           "messages": [
             {
               "content": "You are a friendly greeter. Answer in one line.",
@@ -692,37 +497,37 @@
             }
           ],
           "number": 2,
-          "prompt_template_id": "0198f2a1-0000-7000-8000-00000000b001",
+          "prompt": "greeting",
           "text_template": null
         },
-        "0198f2a1-0000-7000-8000-00000000a002": {
+        "legacy_slot@1": {
           "engine": "liquid",
-          "id": "0198f2a1-0000-7000-8000-00000000a002",
+          "kind": "chat",
           "messages": [
             {
-              "content": "너는 친절한 인사 도우미다. 한 줄로 답한다.",
+              "content": "Use managed instructions.",
               "role": "system"
             },
             {
-              "content": "{{ name }}님에게 인사해줘.",
-              "role": "user"
+              "name": "history",
+              "type": "slot"
             }
           ],
           "number": 1,
-          "prompt_template_id": "0198f2a1-0000-7000-8000-00000000b001",
+          "prompt": "legacy_slot",
           "text_template": null
         },
-        "0198f2a1-0000-7000-8000-00000000a003": {
+        "summarize@4": {
           "engine": "liquid",
-          "id": "0198f2a1-0000-7000-8000-00000000a003",
+          "kind": "text",
           "messages": [],
           "number": 4,
-          "prompt_template_id": "0198f2a1-0000-7000-8000-00000000b002",
+          "prompt": "summarize",
           "text_template": "Summarize the following notes in one paragraph.\n{% for item in items %}- {{ item }}\n{% endfor %}"
         },
-        "0198f2a1-0000-7000-8000-00000000a005": {
+        "tool_chat@1": {
           "engine": "liquid",
-          "id": "0198f2a1-0000-7000-8000-00000000a005",
+          "kind": "chat",
           "messages": [
             {
               "content": "Continue with {{ input }}.",
@@ -758,15 +563,13 @@
             }
           ],
           "number": 1,
-          "prompt_template_id": "0198f2a1-0000-7000-8000-00000000b003",
+          "prompt": "tool_chat",
           "text_template": null
         }
       },
       "prompts": {
         "draft": {
           "default_params": {},
-          "id": "0198f2a1-0000-7000-8000-00000000c004",
-          "input_schema": [],
           "kind": "chat",
           "payload_policy": {
             "encrypt": false,
@@ -774,18 +577,11 @@
             "mode": "full",
             "retention_days": 30,
             "sample_rate": 1.0
-          }
+          },
+          "variables": []
         },
         "embed": {
           "default_params": {},
-          "id": "0198f2a1-0000-7000-8000-00000000c003",
-          "input_schema": [
-            {
-              "name": "text",
-              "required": true,
-              "type": "string"
-            }
-          ],
           "kind": "embedding",
           "payload_policy": {
             "encrypt": false,
@@ -793,21 +589,20 @@
             "mode": "hash",
             "retention_days": 30,
             "sample_rate": 1.0
-          }
+          },
+          "variables": [
+            {
+              "name": "text",
+              "required": true,
+              "type": "string"
+            }
+          ]
         },
         "greeting": {
           "default_params": {
             "max_tokens": 512,
             "temperature": 0.7
           },
-          "id": "0198f2a1-0000-7000-8000-00000000c001",
-          "input_schema": [
-            {
-              "name": "name",
-              "required": true,
-              "type": "string"
-            }
-          ],
           "kind": "chat",
           "payload_policy": {
             "encrypt": false,
@@ -815,20 +610,37 @@
             "mode": "full",
             "retention_days": 30,
             "sample_rate": 1.0
-          }
+          },
+          "variables": [
+            {
+              "name": "name",
+              "required": true,
+              "type": "string"
+            }
+          ]
+        },
+        "legacy_slot": {
+          "default_params": {},
+          "kind": "chat",
+          "payload_policy": {
+            "encrypt": false,
+            "max_bytes": 262144,
+            "mode": "full",
+            "retention_days": 30,
+            "sample_rate": 1.0
+          },
+          "variables": [
+            {
+              "name": "history",
+              "required": false,
+              "type": "list"
+            }
+          ]
         },
         "summarize": {
           "default_params": {
             "temperature": 0.0
           },
-          "id": "0198f2a1-0000-7000-8000-00000000c002",
-          "input_schema": [
-            {
-              "name": "items",
-              "required": true,
-              "type": "list"
-            }
-          ],
           "kind": "text",
           "payload_policy": {
             "encrypt": false,
@@ -836,18 +648,17 @@
             "mode": "full",
             "retention_days": 30,
             "sample_rate": 1.0
-          }
+          },
+          "variables": [
+            {
+              "name": "items",
+              "required": true,
+              "type": "list"
+            }
+          ]
         },
         "tool_chat": {
           "default_params": {},
-          "id": "0198f2a1-0000-7000-8000-00000000c005",
-          "input_schema": [
-            {
-              "name": "input",
-              "required": true,
-              "type": "string"
-            }
-          ],
           "kind": "chat",
           "payload_policy": {
             "encrypt": false,
@@ -855,38 +666,42 @@
             "mode": "full",
             "retention_days": 30,
             "sample_rate": 1.0
-          }
+          },
+          "variables": [
+            {
+              "name": "input",
+              "required": true,
+              "type": "string"
+            }
+          ]
         }
       },
-      "schema_version": 5
+      "schema_version": 1
     },
     "staging": {
       "deployments": {
         "greeting": {
-          "id": "0198f2a1-0000-7000-8000-00000000d011",
-          "model_id": "0198f2a1-0000-7000-8000-00000000e001",
+          "model": "openai/gpt-4o-mini",
           "params": {
             "temperature": 0.9,
             "top_p": 0.8
           },
+          "prompt_version": 3,
+          "provider": "openrouter",
           "provider_options": {},
-          "revision": "v2026.09.30-7",
-          "template_pins": {
-            "default": "0198f2a1-0000-7000-8000-00000000a004"
-          }
+          "revision": "v2026.09.30-7"
         }
       },
       "environment": "staging",
       "models": {
-        "0198f2a1-0000-7000-8000-00000000e001": {
+        "openrouter:openai/gpt-4o-mini": {
           "capabilities": [
             "tools",
             "streaming"
           ],
           "display_name": "GPT-4o mini",
-          "id": "0198f2a1-0000-7000-8000-00000000e001",
           "metadata": {},
-          "model_id": "openai/gpt-4o-mini",
+          "model": "openai/gpt-4o-mini",
           "provider": "openrouter",
           "provider_options": {
             "allow_fallbacks": false,
@@ -899,9 +714,9 @@
       },
       "project": "sdkfixture",
       "prompt_versions": {
-        "0198f2a1-0000-7000-8000-00000000a004": {
+        "greeting@3": {
           "engine": "liquid",
-          "id": "0198f2a1-0000-7000-8000-00000000a004",
+          "kind": "chat",
           "messages": [
             {
               "content": "You are a greeter (staging build).",
@@ -913,7 +728,7 @@
             }
           ],
           "number": 3,
-          "prompt_template_id": "0198f2a1-0000-7000-8000-00000000b001",
+          "prompt": "greeting",
           "text_template": null
         }
       },
@@ -923,14 +738,6 @@
             "max_tokens": 512,
             "temperature": 0.7
           },
-          "id": "0198f2a1-0000-7000-8000-00000000c001",
-          "input_schema": [
-            {
-              "name": "name",
-              "required": true,
-              "type": "string"
-            }
-          ],
           "kind": "chat",
           "payload_policy": {
             "encrypt": false,
@@ -938,29 +745,33 @@
             "mode": "full",
             "retention_days": 30,
             "sample_rate": 0.5
-          }
+          },
+          "variables": [
+            {
+              "name": "name",
+              "required": true,
+              "type": "string"
+            }
+          ]
         }
       },
-      "schema_version": 5
+      "schema_version": 1
     }
   },
   "error_categories": {
     "missing_variable": "prompt selection succeeded but rendering needed a variable that was absent",
+    "render_error": "prompt selection succeeded but message rendering failed",
     "unknown_prompt": "the document has no prompt with that key",
     "unknown_template": "the deployment pins no template version under that name (no fallback to \"default\")",
     "unresolved": "the prompt exists but has no deployment in this environment"
   },
   "format_version": 1,
   "generated_from": {
-    "commit": "7a7b6892b1af29bcf6a8add836911a6fbdc49770",
+    "commit": "981ede83ec76119ff43547c34b1e020ee75fbbf0",
     "language": "elixir",
     "repo": "https://github.com/polimo-dev/prompton-elixir",
     "sdk": "prompton_sdk",
-    "sdk_version": "0.4.0"
+    "sdk_version": "0.8.0"
   },
-  "merge_semantics": {
-    "null_values": "an override value of null is kept as null, not deleted",
-    "params": "prompt.default_params <- deployment.params (shallow, later wins)",
-    "provider_options": "model.provider_options <- deployment.provider_options (shallow, later wins)"
-  }
+  "merge_semantics": "schema v1 deployments pin the default prompt version with readable provider/model references."
 }

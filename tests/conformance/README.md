@@ -46,7 +46,7 @@ For each case, render `template` with `variables` using the engine named in `eng
   reported `variable` name.
 
 `lint_cases` exercise the static whitelist check (`expect.lint` is `"ok"`, or `"error"` plus the
-`reasons` in order). `variables_cases` exercise "which input variables does this template read".
+`reasons` in order). `variables_cases` exercise "which variables does this template read".
 Both are optional for an SDK that only renders: the server rejects a non-conforming template when
 the prompt version is committed, so a template that fails lint can never reach a use-case document.
 
