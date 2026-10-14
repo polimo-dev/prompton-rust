@@ -4,23 +4,22 @@ All notable changes to `prompton-sdk` are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the crate follows
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
-## 0.6.0 - Unreleased
+## 0.6.0
 
 - Breaking request contract: monitoring logs now send readable prompt evidence only: `deployment_revision`,
   `prompt`, and `prompt_version_number`. `deployment_id`, `prompt_version_id`, and `model_id`
   remain local response/cache evidence but are no longer emitted in log requests.
 - Suppress routine closed transport generation logs and completion trace events for
   `%Req.TransportError{reason: :closed}` while preserving retries, callbacks and other errors.
+- Retires message-slot expansion. A deployed message with `type: "slot"` now fails with
+  `Message slots are not supported; compose conversation history in app code.`
+- Documents the app-owned chat flow: render PromptOn-managed messages, append application chat
+  history and the current user message, call the provider, and log that final message list.
 
 ## 0.5.1
 
 - Patch source release metadata after the 0.5.0 source tag.
 - Replace hex cache-key encoding with an MSRV-compatible clippy-clean loop.
-
-- Retires message-slot expansion. A deployed message with `type: "slot"` now fails with
-  `Message slots are not supported; compose conversation history in app code.`
-- Documents the app-owned chat flow: render PromptOn-managed messages, append application chat
-  history and the current user message, call the provider, and log that final message list.
 
 ## 0.5.0
 
