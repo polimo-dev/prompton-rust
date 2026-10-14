@@ -428,7 +428,7 @@ impl UseCaseDocument {
                             Some(raw) => {
                                 deployments.insert(
                                     key.clone(),
-                                    decode_deployment(key, raw, schema_version, &mut warnings)?,
+                                    decode_deployment(key, raw, schema_version)?,
                                 );
                             }
                             None => warnings.push(format!("deployment {key} is not an object")),
@@ -661,7 +661,6 @@ fn decode_deployment(
     key: &str,
     raw: &Map<String, Value>,
     schema_version: i64,
-    _warnings: &mut Vec<String>,
 ) -> Result<Deployment, DecodeError> {
     let mut prompt_pins = BTreeMap::new();
     if schema_version >= 8 {
