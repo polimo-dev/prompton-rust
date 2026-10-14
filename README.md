@@ -18,15 +18,14 @@ use_case.track(…, || …)        → your provider call, timed and logged
 
 ## Install
 
-The crate is not on crates.io yet, so depend on the repository:
+Install the v0.6.0 GitHub source release:
 
 ```toml
 [dependencies]
-prompton-sdk = { git = "https://github.com/polimo-dev/prompton-rust", branch = "main" }
+prompton-sdk = { git = "https://github.com/polimo-dev/prompton-rust", tag = "v0.6.0" }
 ```
 
-Once it is published, the line becomes `prompton-sdk = "0.6.0"`. The crate is `prompton-sdk`; the
-library you import is `prompton`. Rust 1.85 or newer.
+The crate is `prompton-sdk`; the library you import is `prompton`. Rust 1.85 or newer.
 
 ## Message ownership
 
