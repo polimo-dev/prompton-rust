@@ -11,7 +11,9 @@ use std::time::Duration;
 use prompton::{
     Client, Error, HttpClient, HttpRequest, HttpResponse, Mode, Source, TransportError,
 };
-use support::{document_json, readable_document_json, StubResponse, StubServer};
+use support::{
+    document_json, readable_document_json, readable_single_document_json, StubResponse, StubServer,
+};
 
 const ETAG: &str = "\"sha256-1111\"";
 
@@ -606,6 +608,57 @@ fn schema_eight_bundle_serves_readable_refs_and_legacy_ids_stay_empty() {
     assert_eq!(use_case.model_id, None);
     assert_eq!(use_case.prompt_version_id, None);
     assert_eq!(use_case.prompt_version_number, Some(2));
+    assert_eq!(
+        use_case
+            .messages(serde_json::json!({"name": "Ada"}))
+            .unwrap()[0]
+            .content,
+        "Hello Ada"
+    );
+}
+
+#[test]
+fn schema_nine_single_prompt_fetch_persists_original_bytes_across_disk_restart() {
+    let dir = support::temp_dir("single-v9-raw");
+    let disk = dir.join("snapshot.json");
+    let body = readable_single_document_json("production", "demo", "Hello {{ name }}");
+    let server = StubServer::start({
+        let body = body.clone();
+        move |_, _| StubResponse::json(200, body.clone()).with_header("etag", "\"single-v9\"")
+    });
+
+    let client = Client::builder()
+        .base_url(server.base_url())
+        .api_key("ptn_demo_secret")
+        .environment("production")
+        .disk_cache_path(&disk)
+        .log_sink(|_| {})
+        .build()
+        .unwrap();
+
+    let use_case = client.use_case("greeting").unwrap();
+    assert_eq!(use_case.model.as_deref(), Some("openai/gpt-4o-mini"));
+    assert_eq!(use_case.etag.as_deref(), Some("\"single-v9\""));
+    assert_eq!(use_case.prompt_version_number, Some(2));
+
+    let prompt_disk = disk
+        .with_file_name("snapshot.json.prompts")
+        .join("6772656574696e67.json");
+    assert_eq!(std::fs::read_to_string(&prompt_disk).unwrap(), body);
+
+    client.export_use_cases(&disk).expect("export");
+    assert_eq!(std::fs::read_to_string(&disk).unwrap(), body);
+
+    drop(client);
+    let offline = Client::builder()
+        .mode(Mode::Offline)
+        .environment("production")
+        .disk_cache_path(&disk)
+        .log_sink(|_| {})
+        .build()
+        .unwrap();
+    let use_case = offline.use_case("greeting").unwrap();
+    assert_eq!(use_case.source, Source::Disk);
     assert_eq!(
         use_case
             .messages(serde_json::json!({"name": "Ada"}))

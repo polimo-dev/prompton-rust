@@ -2,7 +2,7 @@
 //!
 //! One request returns everything live in one environment — every deployment, the prompt versions
 //! and models they pin, and the use case metadata — and the SDK reads it locally. The
-//! SDK reads schema versions 4 through 8: stale disk caches, old bundles, missing versions and
+//! SDK reads schema versions 4 through 9: stale disk caches, old bundles, missing versions and
 //! unsupported future schema versions are refused.
 
 use std::collections::BTreeMap;
@@ -14,7 +14,7 @@ use serde_json::{Map, Value};
 use crate::template::Engine;
 
 /// The schema version this SDK reads.
-pub const SCHEMA_VERSION: i64 = 8;
+pub const SCHEMA_VERSION: i64 = 9;
 
 /// The default payload cap when a use case carries no `payload_policy`.
 pub const DEFAULT_MAX_BYTES: usize = 262_144;
@@ -397,6 +397,14 @@ impl UseCaseDocument {
             }
         };
 
+        let normalized;
+        let map = if schema_version == 9 {
+            normalized = normalize_schema9_single_prompt(map)?;
+            &normalized
+        } else {
+            map
+        };
+
         let use_cases_raw = map
             .get("use_cases")
             .or_else(|| map.get("prompts"))
@@ -618,6 +626,100 @@ fn validate_schema8_references(map: &Map<String, Value>) -> Result<(), DecodeErr
     }
 
     Ok(())
+}
+
+fn normalize_schema9_single_prompt(
+    map: &Map<String, Value>,
+) -> Result<Map<String, Value>, DecodeError> {
+    for plural in ["prompts", "deployments", "prompt_versions", "models"] {
+        if map.contains_key(plural) {
+            return Err(DecodeError::Invalid(format!(
+                "schema 9 single prompt document must not include {plural}"
+            )));
+        }
+    }
+
+    let prompt = required_object(map, "prompt")?;
+    let deployment = required_object(map, "deployment")?;
+    let prompt_version = required_object(map, "prompt_version")?;
+    let model = required_object(map, "model")?;
+
+    let key = required_string(prompt.get("key"), "prompt.key")?;
+    let version_prompt = required_string(prompt_version.get("prompt"), "prompt_version.prompt")?;
+    if version_prompt != key {
+        return Err(DecodeError::Invalid(format!(
+            "prompt_version.prompt {version_prompt} must match prompt.key {key}"
+        )));
+    }
+
+    let version_number =
+        strict_positive_i64(prompt_version.get("number"), "prompt_version.number")?;
+    let deployment_version = strict_positive_i64(
+        deployment.get("prompt_version"),
+        "deployment.prompt_version",
+    )?;
+    if deployment_version != version_number {
+        return Err(DecodeError::Invalid(format!(
+            "deployment.prompt_version {deployment_version} must match prompt_version.number {version_number}"
+        )));
+    }
+
+    let deployment_provider = required_string(deployment.get("provider"), "deployment.provider")?;
+    let deployment_model = required_string(deployment.get("model"), "deployment.model")?;
+    let model_provider = required_string(model.get("provider"), "model.provider")?;
+    let model_name = required_string(model.get("model"), "model.model")?;
+    if deployment_provider != model_provider || deployment_model != model_name {
+        return Err(DecodeError::Invalid(format!(
+            "deployment provider/model {deployment_provider}:{deployment_model} must match model {model_provider}:{model_name}"
+        )));
+    }
+
+    let mut normalized = map.clone();
+    normalized.remove("prompt");
+    normalized.remove("deployment");
+    normalized.remove("prompt_version");
+    normalized.remove("model");
+
+    normalized.insert(
+        "prompts".to_string(),
+        Value::Object(singleton_object(key, Value::Object(prompt.clone()))),
+    );
+    normalized.insert(
+        "deployments".to_string(),
+        Value::Object(singleton_object(key, Value::Object(deployment.clone()))),
+    );
+    normalized.insert(
+        "prompt_versions".to_string(),
+        Value::Object(singleton_object(
+            &format!("{key}@{version_number}"),
+            Value::Object(prompt_version.clone()),
+        )),
+    );
+    normalized.insert(
+        "models".to_string(),
+        Value::Object(singleton_object(
+            &format!("{model_provider}:{model_name}"),
+            Value::Object(model.clone()),
+        )),
+    );
+    Ok(normalized)
+}
+
+fn required_object<'a>(
+    map: &'a Map<String, Value>,
+    key: &str,
+) -> Result<&'a Map<String, Value>, DecodeError> {
+    match map.get(key) {
+        Some(Value::Object(raw)) => Ok(raw),
+        Some(_) => Err(DecodeError::Invalid(format!("{key} must be an object"))),
+        None => Err(DecodeError::Invalid(format!("{key} is required"))),
+    }
+}
+
+fn singleton_object(key: &str, value: Value) -> Map<String, Value> {
+    let mut map = Map::new();
+    map.insert(key.to_string(), value);
+    map
 }
 
 fn optional_object<'a>(
@@ -870,18 +972,19 @@ mod tests {
     }
 
     #[test]
-    fn accepts_schema_versions_through_eight_and_refuses_future() {
+    fn accepts_schema_versions_through_nine_and_refuses_future() {
         for version in [5, 6, 7] {
             let mut value = document();
             value["schema_version"] = json!(version);
             assert!(UseCaseDocument::from_value(&value).is_ok());
         }
         assert!(UseCaseDocument::from_value(&readable_document()).is_ok());
+        assert!(UseCaseDocument::from_value(&readable_single_document("greeting")).is_ok());
         let mut value = document();
-        value["schema_version"] = json!(9);
+        value["schema_version"] = json!(10);
         assert_eq!(
             UseCaseDocument::from_value(&value),
-            Err(DecodeError::UnsupportedSchemaVersion(9))
+            Err(DecodeError::UnsupportedSchemaVersion(10))
         );
     }
 
@@ -946,6 +1049,104 @@ mod tests {
                 .as_deref(),
             Some("openai/gpt-4o-mini")
         );
+    }
+
+    fn readable_single_document(key: &str) -> Value {
+        json!({
+            "schema_version": 9,
+            "project": "demo",
+            "environment": "production",
+            "prompt": {
+                "key": key,
+                "kind": "chat",
+                "default_params": {"max_tokens": 64}
+            },
+            "deployment": {
+                "revision": "v2026.09.30-3",
+                "provider": "openrouter",
+                "model": "openai/gpt-4o-mini",
+                "prompt_version": 2,
+                "params": {"temperature": 0.2}
+            },
+            "prompt_version": {
+                "prompt": key,
+                "number": 2,
+                "engine": "liquid",
+                "messages": [{"role": "user", "content": "hi"}]
+            },
+            "model": {
+                "provider": "openrouter",
+                "model": "openai/gpt-4o-mini",
+                "status": "active"
+            }
+        })
+    }
+
+    #[test]
+    fn decodes_schema_nine_single_prompt_document() {
+        let value = readable_single_document("greeting");
+
+        let (doc, warnings) = UseCaseDocument::from_value(&value).unwrap();
+        assert!(warnings.is_empty());
+        assert_eq!(doc.schema_version, 9);
+        assert_eq!(doc.use_cases["greeting"].key, "greeting");
+        assert_eq!(
+            doc.deployments["greeting"].model_id.as_deref(),
+            Some("openrouter:openai/gpt-4o-mini")
+        );
+        assert_eq!(
+            doc.deployments["greeting"].prompt_pins["default"],
+            "greeting@2"
+        );
+        assert_eq!(
+            doc.prompt_versions["greeting@2"].prompt_id.as_deref(),
+            Some("greeting")
+        );
+    }
+
+    #[test]
+    fn decodes_schema_nine_decision_kind_as_an_unknown_kind() {
+        let mut value = readable_single_document("route");
+        value["prompt"]["kind"] = json!("decision");
+        value["prompt_version"]["kind"] = json!("decision");
+
+        let (doc, warnings) = UseCaseDocument::from_value(&value).unwrap();
+        assert!(warnings.is_empty());
+        assert_eq!(
+            doc.use_cases["route"].kind,
+            Kind::Other("decision".to_string())
+        );
+    }
+
+    #[test]
+    fn schema_nine_rejects_mixed_or_mismatched_single_prompt_documents() {
+        let mut mixed = readable_single_document("greeting");
+        mixed["prompts"] = json!({});
+        assert!(matches!(
+            UseCaseDocument::from_value(&mixed),
+            Err(DecodeError::Invalid(message)) if message.contains("must not include prompts")
+        ));
+
+        let mut bad_prompt = readable_single_document("greeting");
+        bad_prompt["prompt_version"]["prompt"] = json!("other");
+        assert!(matches!(
+            UseCaseDocument::from_value(&bad_prompt),
+            Err(DecodeError::Invalid(message)) if message.contains("prompt_version.prompt other")
+        ));
+
+        let mut bad_version = readable_single_document("greeting");
+        bad_version["deployment"]["prompt_version"] = json!(3);
+        assert!(matches!(
+            UseCaseDocument::from_value(&bad_version),
+            Err(DecodeError::Invalid(message)) if message.contains("deployment.prompt_version 3")
+        ));
+
+        let mut bad_model = readable_single_document("greeting");
+        bad_model["deployment"]["model"] = json!("openai/missing");
+        assert!(matches!(
+            UseCaseDocument::from_value(&bad_model),
+            Err(DecodeError::Invalid(message)) if message.contains("must match model")
+        ));
     }
 
     #[test]

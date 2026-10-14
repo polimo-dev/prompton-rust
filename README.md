@@ -18,11 +18,11 @@ use_case.track(…, || …)        → your provider call, timed and logged
 
 ## Install
 
-Install the v0.7.0 GitHub source release:
+Install the v0.7.1 GitHub source release:
 
 ```toml
 [dependencies]
-prompton-sdk = { git = "https://github.com/polimo-dev/prompton-rust", tag = "v0.7.0" }
+prompton-sdk = { git = "https://github.com/polimo-dev/prompton-rust", tag = "v0.7.1" }
 ```
 
 The crate is `prompton-sdk`; the library you import is `prompton`. Rust 1.85 or newer.

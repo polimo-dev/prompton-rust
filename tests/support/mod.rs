@@ -338,3 +338,43 @@ pub fn readable_document_json(environment: &str, project: &str, greeting: &str) 
     })
     .to_string()
 }
+
+/// A schema v9 single-prompt document with readable resource references.
+pub fn readable_single_document_json(environment: &str, project: &str, greeting: &str) -> String {
+    serde_json::json!({
+        "schema_version": 9,
+        "project": project,
+        "environment": environment,
+        "prompt": {
+            "key": "greeting",
+            "kind": "chat",
+            "input_schema": [{"name": "name", "type": "string", "required": true}],
+            "default_params": {"max_tokens": 512},
+            "payload_policy": {"mode": "full", "sample_rate": 1.0, "max_bytes": 262144}
+        },
+        "deployment": {
+            "revision": "v2026.09.30-3",
+            "provider": "openrouter",
+            "model": "openai/gpt-4o-mini",
+            "prompt_version": 2,
+            "params": {"temperature": 0.2},
+            "provider_options": {}
+        },
+        "prompt_version": {
+            "prompt": "greeting",
+            "number": 2,
+            "engine": "liquid",
+            "messages": [{"role": "user", "content": greeting}]
+        },
+        "model": {
+            "provider": "openrouter",
+            "model": "openai/gpt-4o-mini",
+            "display_name": "GPT-4o mini",
+            "metadata": {},
+            "provider_options": {"only": ["OpenAI"]},
+            "capabilities": ["tools"],
+            "status": "active"
+        }
+    })
+    .to_string()
+}
