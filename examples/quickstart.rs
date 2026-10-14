@@ -1,7 +1,7 @@
-//! Resolve a use case, call a provider, log the model call.
+//! Resolve a prompt, call a provider, log the model call.
 //!
 //! ```sh
-//! cargo run --example quickstart                       # offline, on a use-case document written inline
+//! cargo run --example quickstart                       # offline, on a prompt document written inline
 //! PTN_API_KEY=ptn_myproject_… cargo run --example quickstart   # against a real PromptOn
 //! ```
 //!
@@ -27,21 +27,21 @@ fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
             .environment("production")
             .without_disk_cache()
             .build()?;
-        client.set_use_cases(&example_use_case_document())?;
+        client.set_prompts(&example_prompt_document())?;
         client
     };
 
-    // 1. Which model, which parameters, which prompt — from the use-case document in memory, no HTTP call.
-    let call = match client.use_case("greeting") {
+    // 1. Which model, which parameters, which prompt — from the prompt document in memory, no HTTP call.
+    let call = match client.prompt("greeting") {
         Ok(call) => call,
-        Err(Error::Unresolved(use_case)) => {
-            eprintln!("{use_case} has no live deployment in this environment — deploy it first");
+        Err(Error::Unresolved(prompt)) => {
+            eprintln!("{prompt} has no live deployment in this environment — deploy it first");
             return Ok(());
         }
         Err(error) => return Err(error.into()),
     };
     println!(
-        "use_case {} → {} (revision {:?}, source {})",
+        "prompt {} → {} (revision {:?}, source {})",
         call.key,
         call.model.clone().unwrap_or_default(),
         call.deployment_revision,
@@ -109,8 +109,8 @@ fn app_history() -> Vec<Message> {
     vec![Message::new("user", "My name is Ada.")]
 }
 
-/// The use-case document an app would normally fetch from PromptOn, inline so the example runs anywhere.
-fn example_use_case_document() -> serde_json::Value {
+/// The prompt document an app would normally fetch from PromptOn, inline so the example runs anywhere.
+fn example_prompt_document() -> serde_json::Value {
     json!({
         "schema_version": 1,
         "project": "example",

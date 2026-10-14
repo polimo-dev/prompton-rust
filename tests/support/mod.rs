@@ -234,13 +234,13 @@ fn serve(stream: TcpStream, requests: &Arc<Mutex<Vec<RecordedRequest>>>, handler
     let _ = out.flush();
 }
 
-/// The `production` use-case document from the use-case conformance suite, whose ids are the ones the
+/// The `production` prompt document from the prompt conformance suite, whose ids are the ones the
 /// golden monitoring-log records were built from.
 pub fn greeting_document() -> Value {
-    conformance("use_case.json")["documents"]["production"].clone()
+    conformance("prompt.json")["documents"]["production"].clone()
 }
 
-/// A use-case document for the tests, with one chat use case and one prompt name per language.
+/// A prompt document for the tests, with one chat prompt and one prompt name per language.
 pub fn document_json(environment: &str, project: &str, greeting: &str) -> String {
     readable_document_json(environment, project, greeting)
 }

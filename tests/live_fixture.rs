@@ -8,7 +8,7 @@
 //!   cargo test --test live_fixture -- --ignored --nocapture
 //! ```
 //!
-//! The fixture project has three use cases — `greeting` (chat, prompts `default` and `ko`),
+//! The fixture project has three prompts — `greeting` (chat, prompts `default` and `ko`),
 //! `summarize` (text) and `embed` (embedding) — in the `production` and `staging` environments.
 
 mod support;
@@ -18,7 +18,7 @@ use std::time::Duration;
 
 use prompton::{
     CallMeta, Client, Completion, CostSource, Error, HttpClient, HttpRequest, HttpResponse, Kind,
-    RemotePromptRequest, Result, Status, TransportError, UreqClient, Usage, UseCaseOptions,
+    PromptOptions, RenderPromptRequest, Result, Status, TransportError, UreqClient, Usage,
 };
 use serde_json::{json, Value};
 
@@ -79,8 +79,8 @@ fn against_the_running_fixture_server() {
         .build()
         .expect("the SDK should start against the fixture server");
 
-    // --- the use-case document, and a conditional repoll --------------------
-    let info = client.use_cases_info();
+    // --- the prompt document, and a conditional repoll --------------------
+    let info = client.prompts_info();
     assert_eq!(info.environment.as_deref(), Some("production"));
     assert_eq!(info.project.as_deref(), Some("sdkfixture"));
     assert_eq!(info.schema_version, Some(prompton::SCHEMA_VERSION));
@@ -95,8 +95,8 @@ fn against_the_running_fixture_server() {
         .cloned()
         .expect("a recorded call");
     assert!(repoll.1, "the repoll must send If-None-Match");
-    assert_eq!(repoll.2, 304, "an unchanged use-case document answers 304");
-    assert_eq!(client.use_cases_info().etag.as_deref(), Some(etag.as_str()));
+    assert_eq!(repoll.2, 304, "an unchanged prompt document answers 304");
+    assert_eq!(client.prompts_info().etag.as_deref(), Some(etag.as_str()));
 
     // The disk cache is written where it was asked for, and the sidecar carries the ETag.
     let sidecar: Value = serde_json::from_slice(
@@ -106,7 +106,7 @@ fn against_the_running_fixture_server() {
     assert_eq!(sidecar["etag"], Value::String(etag.clone()));
     assert_eq!(sidecar["project"], "sdkfixture");
 
-    // --- local use-case rendering against the remote prompt endpoint ----------------------------
+    // --- local prompt rendering against the remote prompt endpoint ----------------------------
     same_as_server(&client, "greeting", None, json!({"name": "Ada"}));
     same_as_server(&client, "greeting", Some("ko"), json!({"name": "아다"}));
     same_as_server(
@@ -119,26 +119,26 @@ fn against_the_running_fixture_server() {
 
     // --- the error cases ---------------------------------------------------
     assert!(matches!(
-        client.use_case("nope"),
-        Err(Error::UnknownUseCase(_))
+        client.prompt("nope"),
+        Err(Error::UnknownPrompt(_))
     ));
-    match client.prompt_remote(&RemotePromptRequest::new("nope")) {
+    match client.render_prompt(&RenderPromptRequest::new("nope")) {
         Err(Error::Http {
             status, details, ..
         }) => {
             assert_eq!(status, 404);
             assert_eq!(details["key"], "nope");
         }
-        other => panic!("expected a 404 for an unknown use case, got {other:?}"),
+        other => panic!("expected a 404 for an unknown prompt, got {other:?}"),
     }
 
-    match client.use_case_with("greeting", &UseCaseOptions::prompt("fr")) {
-        Err(Error::UnknownPrompt { prompt_names, .. }) => {
-            assert_eq!(prompt_names, vec!["default", "ko"])
+    match client.prompt_with("greeting", &PromptOptions::template("fr")) {
+        Err(Error::UnknownTemplate { template_names, .. }) => {
+            assert_eq!(template_names, vec!["default", "ko"])
         }
-        other => panic!("expected UnknownPrompt, got {other:?}"),
+        other => panic!("expected UnknownTemplate, got {other:?}"),
     }
-    match client.prompt_remote(&RemotePromptRequest::new("greeting").prompt("fr")) {
+    match client.render_prompt(&RenderPromptRequest::new("greeting").template("fr")) {
         Err(Error::Http {
             status, details, ..
         }) => {
@@ -150,13 +150,13 @@ fn against_the_running_fixture_server() {
     }
 
     let missing = client
-        .use_case("greeting")
+        .prompt("greeting")
         .unwrap()
         .messages(json!({}))
         .expect_err("the template needs a name");
     assert_eq!(missing.missing_variable(), Some("name"));
     match client
-        .prompt_remote(&RemotePromptRequest::new("greeting").variables(serde_json::Map::new()))
+        .render_prompt(&RenderPromptRequest::new("greeting").variables(serde_json::Map::new()))
     {
         Err(Error::Http {
             status, details, ..
@@ -190,8 +190,8 @@ fn against_the_running_fixture_server() {
 
     // --- staging is a different pin ---------------------------------------
     let staging = client
-        .prompt_remote(&RemotePromptRequest::new("greeting").environment("staging"))
-        .expect("staging use case works");
+        .render_prompt(&RenderPromptRequest::new("greeting").environment("staging"))
+        .expect("staging prompt works");
     assert_eq!(staging.model.as_deref(), Some("openai/gpt-4o-mini"));
     assert!(
         staging.params.contains_key("temperature"),
@@ -200,7 +200,7 @@ fn against_the_running_fixture_server() {
     );
 
     // --- monitoring logs: 202, then duplicates on a resend -----------------
-    let resolution = client.use_case("greeting").unwrap();
+    let resolution = client.prompt("greeting").unwrap();
     let messages = resolution.messages(json!({"name": "Ada"})).unwrap();
 
     let ids: Vec<String> = (0..3).map(|_| client.log_id()).collect();
@@ -283,59 +283,59 @@ fn against_the_running_fixture_server() {
 }
 
 /// Resolves locally and on the server and compares the two answers field for field.
-fn same_as_server(client: &Client, use_case: &str, prompt: Option<&str>, variables: Value) {
-    let options = UseCaseOptions {
-        prompt: prompt.map(str::to_string),
+fn same_as_server(client: &Client, prompt_key: &str, template: Option<&str>, variables: Value) {
+    let options = PromptOptions {
+        template: template.map(str::to_string),
     };
     let local = client
-        .use_case_with(use_case, &options)
-        .unwrap_or_else(|error| panic!("{use_case}: local resolution failed: {error}"));
+        .prompt_with(prompt_key, &options)
+        .unwrap_or_else(|error| panic!("{prompt_key}: local resolution failed: {error}"));
 
-    let mut request = RemotePromptRequest::new(use_case);
-    request.prompt = prompt.map(str::to_string);
+    let mut request = RenderPromptRequest::new(prompt_key);
+    request.template = template.map(str::to_string);
     if local.kind != Kind::Embedding {
         request.variables = Some(variables.clone().into());
     }
     let remote = client
-        .prompt_remote(&request)
-        .unwrap_or_else(|error| panic!("{use_case}: server resolution failed: {error}"));
+        .render_prompt(&request)
+        .unwrap_or_else(|error| panic!("{prompt_key}: server resolution failed: {error}"));
 
-    assert_eq!(local.kind, remote.kind, "{use_case}: kind");
-    assert_eq!(local.model, remote.model, "{use_case}: model");
-    assert_eq!(local.model_id, remote.model_id, "{use_case}: model_id");
-    assert_eq!(local.provider, remote.provider, "{use_case}: provider");
-    assert_eq!(local.params, remote.params, "{use_case}: params");
+    assert_eq!(local.kind, remote.kind, "{prompt_key}: kind");
+    assert_eq!(local.model, remote.model, "{prompt_key}: model");
+    assert_eq!(local.model_id, remote.model_id, "{prompt_key}: model_id");
+    assert_eq!(local.provider, remote.provider, "{prompt_key}: provider");
+    assert_eq!(local.params, remote.params, "{prompt_key}: params");
     assert_eq!(
         local.provider_options, remote.provider_options,
-        "{use_case}: provider_options"
+        "{prompt_key}: provider_options"
     );
     assert_eq!(
         local.deployment_id, remote.deployment_id,
-        "{use_case}: deployment id"
+        "{prompt_key}: deployment id"
     );
     assert_eq!(
         local.deployment_revision, remote.deployment_revision,
-        "{use_case}: deployment revision"
+        "{prompt_key}: deployment revision"
     );
-    assert_eq!(local.prompt, remote.prompt, "{use_case}: prompt");
+    assert_eq!(local.template, remote.template, "{prompt_key}: template");
     assert_eq!(
-        local.prompt_names, remote.prompt_names,
-        "{use_case}: prompt_names"
+        local.template_names, remote.template_names,
+        "{prompt_key}: template_names"
     );
-    assert_eq!(remote.key, use_case, "{use_case}: key");
+    assert_eq!(remote.key, prompt_key, "{prompt_key}: key");
     assert_eq!(
         remote.source,
         prompton::Source::Remote,
-        "{use_case}: source"
+        "{prompt_key}: source"
     );
     assert_eq!(
         local.prompt_version_id, remote.prompt_version_id,
-        "{use_case}: prompt version"
+        "{prompt_key}: prompt version"
     );
     assert_eq!(
         remote.warnings,
         Vec::<String>::new(),
-        "{use_case}: warnings"
+        "{prompt_key}: warnings"
     );
 
     match local.kind {
@@ -344,7 +344,7 @@ fn same_as_server(client: &Client, use_case: &str, prompt: Option<&str>, variabl
             assert_eq!(
                 Some(rendered.as_slice()),
                 remote.messages.as_deref(),
-                "{use_case}: the local render must match the server's"
+                "{prompt_key}: the local render must match the server's"
             );
         }
         Kind::Text => {
@@ -352,13 +352,16 @@ fn same_as_server(client: &Client, use_case: &str, prompt: Option<&str>, variabl
             assert_eq!(
                 Some(rendered.as_str()),
                 remote.text.as_deref(),
-                "{use_case}: the local render must match the server's"
+                "{prompt_key}: the local render must match the server's"
             );
         }
         _ => {
-            assert!(remote.messages.is_none(), "{use_case}: embedding messages");
-            assert!(remote.text.is_none(), "{use_case}: embedding text");
-            assert!(local.prompt.is_none());
+            assert!(
+                remote.messages.is_none(),
+                "{prompt_key}: embedding messages"
+            );
+            assert!(remote.text.is_none(), "{prompt_key}: embedding text");
+            assert!(local.template.is_none());
         }
     }
 }

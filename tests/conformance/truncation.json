@@ -19,7 +19,7 @@
             "content": "Hello, Ada!"
           },
           "status": "ok",
-          "use_case": "greeting"
+          "prompt": "greeting"
         }
       },
       "log": {
@@ -39,7 +39,7 @@
           "content": "Hello, Ada!"
         },
         "status": "ok",
-        "use_case": "greeting"
+        "prompt": "greeting"
       },
       "name": "passthrough/small_payload_is_untouched",
       "policy": {

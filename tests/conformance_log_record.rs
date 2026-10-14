@@ -147,7 +147,7 @@ fn the_field_rules_hold() {
     for blank in ["prompt_key", "model", "started_at"] {
         let mut broken = record.clone();
         match blank {
-            "prompt_key" => broken.use_case = String::new(),
+            "prompt_key" => broken.prompt_key = String::new(),
             "model" => broken.model = String::new(),
             _ => broken.started_at = String::new(),
         }
@@ -179,10 +179,10 @@ fn the_record_builder_matches_the_golden_chat_success_shape() {
         .build()
         .unwrap();
     client
-        .set_use_cases_as(&support::greeting_document(), prompton::Source::Remote)
+        .set_prompts_as(&support::greeting_document(), prompton::Source::Remote)
         .unwrap();
 
-    let resolution = client.use_case("greeting").unwrap();
+    let resolution = client.prompt("greeting").unwrap();
     let messages = vec![
         Message::new("system", "You are a friendly greeter. Answer in one line."),
         Message::new("user", "Say hello to Ada."),
@@ -245,9 +245,9 @@ fn the_record_builder_matches_the_golden_error_shape() {
         .build()
         .unwrap();
     client
-        .set_use_cases_as(&support::greeting_document(), prompton::Source::Remote)
+        .set_prompts_as(&support::greeting_document(), prompton::Source::Remote)
         .unwrap();
-    let resolution = client.use_case("greeting").unwrap();
+    let resolution = client.prompt("greeting").unwrap();
 
     let meta = CallMeta::new()
         .variables(json!({"name": "Ada"}))

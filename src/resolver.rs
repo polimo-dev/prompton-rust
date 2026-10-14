@@ -1,10 +1,10 @@
-//! Local resolution: snapshot + use case (+ prompt name) → what to send the provider.
+//! Local resolution: snapshot + prompt (+ prompt name) → what to send the provider.
 //!
 //! ```text
-//! deployment       = snapshot.deployments[use_case]        # absent → unresolved (an error)
-//! version          = snapshot.prompt_versions[deployment.prompt_pins[prompt or "default"]]
+//! deployment       = snapshot.deployments[prompt]        # absent → unresolved (an error)
+//! version          = snapshot.prompt_versions[deployment.template_pins[prompt or "default"]]
 //! model            = snapshot.models[deployment.model_id]
-//! params           = use_case.default_params <- deployment.params
+//! params           = prompt.default_params <- deployment.params
 //! provider_options = model.provider_options  <- deployment.provider_options
 //! ```
 //!
@@ -15,22 +15,22 @@
 use serde_json::{Map, Value};
 
 use crate::error::Error;
-use crate::snapshot::{Kind, Message, PayloadPolicy, UseCaseDocument, VariableDefinition};
+use crate::snapshot::{Kind, Message, PayloadPolicy, PromptDocument, VariableDefinition};
 use crate::template::{self, Engine, TemplateError, Vars};
 
 /// The prompt name used when a call does not ask for one.
-pub const DEFAULT_PROMPT: &str = "default";
+pub const DEFAULT_TEMPLATE: &str = "default";
 
-/// Which tier the use-case document came from.
+/// Which tier the prompt document came from.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Source {
     /// Fetched from PromptOn.
     Remote,
     /// Read from the local disk cache.
     Disk,
-    /// Read from the use-case document bundled into the build.
+    /// Read from the prompt document bundled into the build.
     Bundle,
-    /// Supplied by the app (test mode, or a hand-built use-case document).
+    /// Supplied by the app (test mode, or a hand-built prompt document).
     Manual,
 }
 
@@ -59,36 +59,36 @@ impl Source {
 /// A rendered prompt.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum Rendered {
-    /// A chat use case: the messages to send.
+    /// A chat prompt: the messages to send.
     Messages(Vec<Message>),
-    /// A text use case: the prompt string to send.
+    /// A text prompt: the prompt string to send.
     Text(String),
-    /// An embedding use case: there is no prompt.
+    /// An embedding prompt: there is no prompt.
     None,
 }
 
 /// Everything one call needs: which model to call, with which parameters, and which prompt.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct Resolution {
-    /// The use case key that was resolved.
-    pub use_case: String,
+    /// The prompt key that was resolved.
+    pub prompt_key: String,
     /// Chat, text or embedding.
     pub kind: Kind,
     /// The live deployment revision's id.
     pub deployment_id: Option<String>,
     /// The live deployment revision label.
     pub deployment_revision: Option<String>,
-    /// The prompt name that was chosen; `None` for an embedding use case.
-    pub prompt: Option<String>,
+    /// The template name that was chosen; `None` for an embedding prompt.
+    pub template: Option<String>,
     /// Every prompt name the live revision pins.
-    pub available_prompts: Vec<String>,
+    pub template_names: Vec<String>,
     /// The provider-side model string to send to the provider.
     pub model: Option<String>,
     /// The catalog id of that model.
     pub model_id: Option<String>,
     /// The provider name (`openrouter`, …).
     pub provider: Option<String>,
-    /// `use_case.default_params <- deployment.params`, ready to send.
+    /// `prompt.default_params <- deployment.params`, ready to send.
     pub params: Map<String, Value>,
     /// `model.provider_options <- deployment.provider_options`, ready to send.
     pub provider_options: Map<String, Value>,
@@ -98,27 +98,27 @@ pub(crate) struct Resolution {
     pub prompt_version_number: Option<i64>,
     /// The engine the pinned version was committed with.
     pub engine: Engine,
-    /// The raw (unrendered) chat messages, for a chat use case.
+    /// The raw (unrendered) chat messages, for a chat prompt.
     pub messages: Option<Vec<Message>>,
-    /// The raw (unrendered) template, for a text use case.
+    /// The raw (unrendered) template, for a text prompt.
     pub text: Option<String>,
-    /// The use case's declared variables.
+    /// The prompt's declared variables.
     pub variables: Vec<VariableDefinition>,
-    /// The use case's payload storage policy.
+    /// The prompt's payload storage policy.
     pub payload_policy: Option<PayloadPolicy>,
-    /// Which tier the use-case document came from.
+    /// Which tier the prompt document came from.
     pub source: Source,
-    /// The ETag of the use-case document this lookup came from.
+    /// The ETag of the prompt document this lookup came from.
     pub etag: Option<String>,
-    /// Warnings such as `missing_model: <id>`; empty against a healthy use-case document.
+    /// Warnings such as `missing_model: <id>`; empty against a healthy prompt document.
     pub warnings: Vec<String>,
 }
 
 impl Resolution {
     /// Renders the pinned prompt with this call's variables.
     ///
-    /// Chat use cases render every message, text use cases render the template, and an embedding
-    /// use case has no prompt at all ([`Rendered::None`]).
+    /// Chat prompts render every message, text prompts render the template, and an embedding
+    /// prompt has no prompt at all ([`Rendered::None`]).
     pub(crate) fn render(&self, vars: impl Into<Vars>) -> Result<Rendered, Error> {
         let vars = vars.into();
         match (&self.messages, &self.text) {
@@ -132,24 +132,24 @@ impl Resolution {
         }
     }
 
-    /// Renders a chat prompt, or fails when this use case is not a chat one.
+    /// Renders a chat prompt, or fails when this prompt is not a chat one.
     pub(crate) fn render_messages(&self, vars: impl Into<Vars>) -> Result<Vec<Message>, Error> {
         match self.render(vars)? {
             Rendered::Messages(messages) => Ok(messages),
             _ => Err(Error::Template(TemplateError::Render(format!(
-                "use case {} has no chat messages to render",
-                self.use_case
+                "prompt {} has no chat messages to render",
+                self.prompt_key
             )))),
         }
     }
 
-    /// Renders a text prompt, or fails when this use case is not a text one.
+    /// Renders a text prompt, or fails when this prompt is not a text one.
     pub(crate) fn render_text(&self, vars: impl Into<Vars>) -> Result<String, Error> {
         match self.render(vars)? {
             Rendered::Text(text) => Ok(text),
             _ => Err(Error::Template(TemplateError::Render(format!(
-                "use case {} has no text template to render",
-                self.use_case
+                "prompt {} has no text template to render",
+                self.prompt_key
             )))),
         }
     }
@@ -158,44 +158,44 @@ impl Resolution {
 /// Options for a single resolution.
 #[derive(Debug, Clone, Default)]
 pub(crate) struct ResolveOptions {
-    /// The prompt name to pick; `None` means `default`. Ignored for an embedding use case.
-    pub prompt: Option<String>,
+    /// The template name to pick; `None` means `default`. Ignored for an embedding prompt.
+    pub template: Option<String>,
 }
 
-/// Resolves `use_case` against `document`.
+/// Resolves `prompt` against `document`.
 pub(crate) fn resolve(
-    document: &UseCaseDocument,
-    use_case_key: &str,
+    document: &PromptDocument,
+    prompt_key: &str,
     options: &ResolveOptions,
     source: Source,
     etag: Option<&str>,
 ) -> Result<Resolution, Error> {
-    let use_case = document
-        .use_cases
-        .get(use_case_key)
-        .ok_or_else(|| Error::UnknownUseCase(use_case_key.to_string()))?;
+    let prompt = document
+        .prompts
+        .get(prompt_key)
+        .ok_or_else(|| Error::UnknownPrompt(prompt_key.to_string()))?;
 
     let deployment = document
         .deployments
-        .get(use_case_key)
-        .ok_or_else(|| Error::Unresolved(use_case_key.to_string()))?;
+        .get(prompt_key)
+        .ok_or_else(|| Error::Unresolved(prompt_key.to_string()))?;
 
-    let available_prompts: Vec<String> = deployment.prompt_pins.keys().cloned().collect();
+    let template_names: Vec<String> = deployment.template_pins.keys().cloned().collect();
 
-    let (prompt_name, version_id) = if use_case.kind == Kind::Embedding {
+    let (template_name, version_id) = if prompt.kind == Kind::Embedding {
         (None, None)
     } else {
         let name = options
-            .prompt
+            .template
             .clone()
-            .unwrap_or_else(|| DEFAULT_PROMPT.to_string());
-        match deployment.prompt_pins.get(&name) {
+            .unwrap_or_else(|| DEFAULT_TEMPLATE.to_string());
+        match deployment.template_pins.get(&name) {
             Some(version_id) => (Some(name), Some(version_id.clone())),
             None => {
-                return Err(Error::UnknownPrompt {
-                    use_case: use_case_key.to_string(),
-                    prompt: name,
-                    prompt_names: available_prompts,
+                return Err(Error::UnknownTemplate {
+                    prompt: prompt_key.to_string(),
+                    template: name,
+                    template_names,
                 })
             }
         }
@@ -224,27 +224,27 @@ pub(crate) fn resolve(
         None => None,
     };
 
-    let messages = match (&use_case.kind, version) {
+    let messages = match (&prompt.kind, version) {
         (Kind::Chat, Some(version)) => version.messages.clone(),
         _ => None,
     };
-    let text = match (&use_case.kind, version) {
+    let text = match (&prompt.kind, version) {
         (Kind::Text, Some(version)) => version.text_template.clone(),
         _ => None,
     };
     let params = merge_tools(
-        merge(&use_case.default_params, &deployment.params),
+        merge(&prompt.default_params, &deployment.params),
         version.and_then(|version| version.tools.as_ref()),
     )?;
 
     let empty = Map::new();
     Ok(Resolution {
-        use_case: use_case_key.to_string(),
-        kind: use_case.kind.clone(),
+        prompt_key: prompt_key.to_string(),
+        kind: prompt.kind.clone(),
         deployment_id: None,
         deployment_revision: deployment.revision.clone(),
-        prompt: prompt_name,
-        available_prompts,
+        template: template_name,
+        template_names,
         model: model.and_then(|model| model.model_id.clone()),
         model_id: None,
         provider: model.and_then(|model| model.provider.clone()),
@@ -258,8 +258,8 @@ pub(crate) fn resolve(
         engine: version.map(|version| version.engine).unwrap_or_default(),
         messages,
         text,
-        variables: use_case.variables.clone(),
-        payload_policy: use_case.payload_policy.clone(),
+        variables: prompt.variables.clone(),
+        payload_policy: prompt.payload_policy.clone(),
         source,
         etag: etag.map(str::to_string),
         warnings,
@@ -444,8 +444,8 @@ mod tests {
         })
     }
 
-    fn document() -> UseCaseDocument {
-        UseCaseDocument::from_value(&document_value()).unwrap().0
+    fn document() -> PromptDocument {
+        PromptDocument::from_value(&document_value()).unwrap().0
     }
 
     fn resolve_key(key: &str, options: ResolveOptions) -> Result<Resolution, Error> {
@@ -454,7 +454,7 @@ mod tests {
 
     #[test]
     fn schema_one_resolves_readable_keys_with_null_legacy_ids() {
-        let document = UseCaseDocument::from_value(&readable_document_value())
+        let document = PromptDocument::from_value(&readable_document_value())
             .unwrap()
             .0;
         let resolution = resolve(
@@ -474,7 +474,7 @@ mod tests {
         assert_eq!(resolution.prompt_version_number, Some(2));
         assert_eq!(resolution.params["temperature"], json!(0.2));
         assert_eq!(resolution.provider_options["only"], json!(["OpenAI"]));
-        assert_eq!(resolution.available_prompts, vec!["default"]);
+        assert_eq!(resolution.template_names, vec!["default"]);
 
         let rendered = resolution.render(json!({"name": "Ada"})).unwrap();
         assert!(matches!(rendered, Rendered::Messages(_)));
@@ -482,7 +482,7 @@ mod tests {
 
     #[test]
     fn schema_one_scopes_same_version_numbers_by_prompt_key() {
-        let document = UseCaseDocument::from_value(&readable_document_value())
+        let document = PromptDocument::from_value(&readable_document_value())
             .unwrap()
             .0;
         let resolution = resolve(
@@ -515,7 +515,7 @@ mod tests {
         });
 
         assert!(matches!(
-            UseCaseDocument::from_value(&value),
+            PromptDocument::from_value(&value),
             Err(crate::snapshot::DecodeError::Invalid(message))
                 if message.contains("deployment missing references missing prompt version missing@3")
         ));
@@ -534,7 +534,7 @@ mod tests {
             "tool_choice": "auto",
             "parallel_tool_calls": false
         });
-        let document = UseCaseDocument::from_value(&value).unwrap().0;
+        let document = PromptDocument::from_value(&value).unwrap().0;
         let resolution = resolve(
             &document,
             "greeting",
@@ -564,7 +564,7 @@ mod tests {
         ] {
             let mut value = document_value();
             value["prompt_versions"]["greeting@2"]["tools"] = tools;
-            let document = UseCaseDocument::from_value(&value).unwrap().0;
+            let document = PromptDocument::from_value(&value).unwrap().0;
             assert!(
                 resolve(
                     &document,
@@ -584,7 +584,7 @@ mod tests {
             "definitions": [{"type":"function", "function":{"name":"search", "parameters":{"type":"object"}}}],
             "tool_choice": "auto"
         });
-        let document = UseCaseDocument::from_value(&value).unwrap().0;
+        let document = PromptDocument::from_value(&value).unwrap().0;
         assert!(resolve(
             &document,
             "greeting",
@@ -602,7 +602,7 @@ mod tests {
         assert_eq!(resolution.params["temperature"], json!(0.2));
         assert_eq!(resolution.provider_options["only"], json!(["OpenAI"]));
         assert_eq!(resolution.provider_options["sort"], json!(null));
-        assert_eq!(resolution.available_prompts, vec!["default"]);
+        assert_eq!(resolution.template_names, vec!["default"]);
     }
 
     #[test]
@@ -622,20 +622,21 @@ mod tests {
         let error = resolve_key(
             "greeting",
             ResolveOptions {
-                prompt: Some("fr".to_string()),
+                template: Some("fr".to_string()),
             },
         )
         .unwrap_err();
         match error {
-            Error::UnknownPrompt {
+            Error::UnknownTemplate {
                 prompt,
-                prompt_names,
-                ..
+                template,
+                template_names,
             } => {
-                assert_eq!(prompt, "fr");
-                assert_eq!(prompt_names, vec!["default"]);
+                assert_eq!(prompt, "greeting");
+                assert_eq!(template, "fr");
+                assert_eq!(template_names, vec!["default"]);
             }
-            other => panic!("expected UnknownPrompt, got {other:?}"),
+            other => panic!("expected UnknownTemplate, got {other:?}"),
         }
     }
 
@@ -644,24 +645,24 @@ mod tests {
         let resolution = resolve_key(
             "embed",
             ResolveOptions {
-                prompt: Some("ko".to_string()),
+                template: Some("ko".to_string()),
             },
         )
         .unwrap();
-        assert_eq!(resolution.prompt, None);
+        assert_eq!(resolution.template, None);
         assert_eq!(resolution.prompt_version_id, None);
         assert_eq!(resolution.render(()).unwrap(), Rendered::None);
     }
 
     #[test]
-    fn a_use_case_without_a_deployment_is_unresolved() {
+    fn a_prompt_without_a_deployment_is_unresolved() {
         assert!(matches!(
             resolve_key("draft", ResolveOptions::default()),
             Err(Error::Unresolved(_))
         ));
         assert!(matches!(
             resolve_key("nope", ResolveOptions::default()),
-            Err(Error::UnknownUseCase(_))
+            Err(Error::UnknownPrompt(_))
         ));
     }
 }

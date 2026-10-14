@@ -5,45 +5,45 @@ use crate::template::TemplateError;
 
 /// Anything that can go wrong in the SDK.
 ///
-/// The three errors an app is expected to branch on are [`Error::UnknownUseCase`],
-/// [`Error::Unresolved`] and [`Error::UnknownPrompt`]: each of them is a bug in the deployment or
+/// The three errors an app is expected to branch on are [`Error::UnknownPrompt`],
+/// [`Error::Unresolved`] and [`Error::UnknownTemplate`]: each of them is a bug in the deployment or
 /// in the call, never a reason to fall back to a hard-coded prompt. [`Error::NotReady`] is the
-/// only one an app should retry, and it can only happen before the first use-case document has
+/// only one an app should retry, and it can only happen before the first prompt document has
 /// been obtained from any tier.
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
 pub enum Error {
-    /// No use-case document in memory, on disk or in the bundle, and PromptOn could not be reached.
+    /// No prompt document in memory, on disk or in the bundle, and PromptOn could not be reached.
     #[error(
-        "PromptOn is unreachable and no use-case document is cached (memory, disk or bundle): {0}"
+        "PromptOn is unreachable and no prompt document is cached (memory, disk or bundle): {0}"
     )]
     NotReady(String),
 
-    /// The use-case document has no use case with that key.
-    #[error("unknown use case: {0}")]
-    UnknownUseCase(String),
+    /// The prompt document has no prompt with that key.
+    #[error("unknown prompt: {0}")]
+    UnknownPrompt(String),
 
-    /// The use case exists but has no live deployment in this environment.
-    #[error("use case {0} has no live deployment in this environment")]
+    /// The prompt exists but has no live deployment in this environment.
+    #[error("prompt {0} has no live deployment in this environment")]
     Unresolved(String),
 
-    /// The live deployment pins no prompt version under that name. There is no fallback to
+    /// The live deployment pins no prompt version under that template name. There is no fallback to
     /// `default`.
-    #[error("use case {use_case} pins no prompt named {prompt:?} (available: {prompt_names:?})")]
-    UnknownPrompt {
-        /// The use case that was read.
-        use_case: String,
-        /// The prompt name that was asked for.
+    #[error("prompt {prompt} pins no template named {template:?} (available: {template_names:?})")]
+    UnknownTemplate {
+        /// The prompt that was read.
         prompt: String,
-        /// The prompt names the live revision does pin.
-        prompt_names: Vec<String>,
+        /// The template name that was asked for.
+        template: String,
+        /// The template names the live revision does pin.
+        template_names: Vec<String>,
     },
 
     /// Rendering failed: a missing variable, a rejected construct, or a bad template.
     #[error(transparent)]
     Template(#[from] TemplateError),
 
-    /// A use-case document could not be decoded.
+    /// A prompt document could not be decoded.
     #[error(transparent)]
     Decode(#[from] DecodeError),
 

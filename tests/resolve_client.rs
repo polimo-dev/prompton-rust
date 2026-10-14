@@ -5,7 +5,7 @@ mod support;
 
 use std::time::Duration;
 
-use prompton::{Client, Error, Kind, RemotePromptRequest};
+use prompton::{Client, Error, Kind, RenderPromptRequest};
 use serde_json::json;
 use support::{StubResponse, StubServer};
 
@@ -58,12 +58,12 @@ fn a_variable_less_answer_is_cached_and_rendered_locally() {
     let client = client_for(&server, Duration::from_secs(60));
 
     let answer = client
-        .prompt_remote(&RemotePromptRequest::new("greeting"))
+        .render_prompt(&RenderPromptRequest::new("greeting"))
         .unwrap();
     assert_eq!(answer.key, "greeting");
     assert_eq!(answer.kind, Kind::Chat);
     assert_eq!(answer.model.as_deref(), Some("openai/gpt-4o-mini"));
-    assert_eq!(answer.prompt_names, vec!["default", "ko"]);
+    assert_eq!(answer.template_names, vec!["default", "ko"]);
     assert_eq!(
         answer.deployment_revision,
         Some("v2026.09.30-3".to_string())
@@ -75,7 +75,7 @@ fn a_variable_less_answer_is_cached_and_rendered_locally() {
 
     for _ in 0..5 {
         client
-            .prompt_remote(&RemotePromptRequest::new("greeting"))
+            .render_prompt(&RenderPromptRequest::new("greeting"))
             .unwrap();
     }
     assert_eq!(server.request_count(), 1, "the answer is cached per TTL");
@@ -91,7 +91,7 @@ fn a_call_with_variables_is_never_cached() {
 
     for _ in 0..3 {
         let answer = client
-            .prompt_remote(&RemotePromptRequest::new("greeting").variables(json!({"name": "Ada"})))
+            .render_prompt(&RenderPromptRequest::new("greeting").variables(json!({"name": "Ada"})))
             .unwrap();
         assert_eq!(
             answer.messages.as_ref().unwrap()[0].content,
@@ -111,7 +111,7 @@ fn a_numeric_deployment_revision_from_the_server_is_invalid() {
     });
     let client = client_for(&server, Duration::from_secs(60));
 
-    match client.prompt_remote(&RemotePromptRequest::new("greeting")) {
+    match client.render_prompt(&RenderPromptRequest::new("greeting")) {
         Err(Error::Transport(message)) => {
             assert!(message.contains("deployment revision"), "{message}");
         }
@@ -131,16 +131,16 @@ fn the_prompt_name_is_part_of_the_cache_key() {
     let client = client_for(&server, Duration::from_secs(60));
 
     client
-        .prompt_remote(&RemotePromptRequest::new("greeting"))
+        .render_prompt(&RenderPromptRequest::new("greeting"))
         .unwrap();
     let ko = client
-        .prompt_remote(&RemotePromptRequest::new("greeting").prompt("ko"))
+        .render_prompt(&RenderPromptRequest::new("greeting").template("ko"))
         .unwrap();
-    assert_eq!(ko.prompt.as_deref(), Some("ko"));
+    assert_eq!(ko.template.as_deref(), Some("ko"));
     assert_eq!(server.request_count(), 2);
 
     client
-        .prompt_remote(&RemotePromptRequest::new("greeting").prompt("ko"))
+        .render_prompt(&RenderPromptRequest::new("greeting").template("ko"))
         .unwrap();
     assert_eq!(server.request_count(), 2, "the second ko call is cached");
 }
@@ -162,18 +162,18 @@ fn a_rate_limit_or_a_5xx_is_answered_from_the_cache() {
     let client = client_for(&server, Duration::from_millis(30));
 
     client
-        .prompt_remote(&RemotePromptRequest::new("greeting"))
+        .render_prompt(&RenderPromptRequest::new("greeting"))
         .unwrap();
     std::thread::sleep(Duration::from_millis(60));
 
     let after_429 = client
-        .prompt_remote(&RemotePromptRequest::new("greeting"))
+        .render_prompt(&RenderPromptRequest::new("greeting"))
         .expect("the cached answer keeps serving");
     assert_eq!(after_429.model.as_deref(), Some("openai/gpt-4o-mini"));
 
     std::thread::sleep(Duration::from_millis(60));
     let after_500 = client
-        .prompt_remote(&RemotePromptRequest::new("greeting"))
+        .render_prompt(&RenderPromptRequest::new("greeting"))
         .expect("still serving");
     assert_eq!(
         after_500.deployment_revision,
@@ -192,7 +192,7 @@ fn a_404_is_reported_with_its_details() {
     });
     let client = client_for(&server, Duration::from_secs(60));
 
-    match client.prompt_remote(&RemotePromptRequest::new("greeting").prompt("fr")) {
+    match client.render_prompt(&RenderPromptRequest::new("greeting").template("fr")) {
         Err(Error::Http {
             status,
             code,
@@ -220,7 +220,7 @@ fn offline_and_test_modes_refuse_to_call_out() {
             .build()
             .unwrap();
         assert!(matches!(
-            client.prompt_remote(&RemotePromptRequest::new("greeting")),
+            client.render_prompt(&RenderPromptRequest::new("greeting")),
             Err(Error::RemoteDisabled(_))
         ));
         client.refresh().expect("refresh is a no-op");

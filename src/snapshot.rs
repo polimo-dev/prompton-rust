@@ -15,10 +15,10 @@ use crate::template::Engine;
 /// The schema version this SDK reads.
 pub const SCHEMA_VERSION: i64 = 1;
 
-/// The default payload cap when a use case carries no `payload_policy`.
+/// The default payload cap when a prompt carries no `payload_policy`.
 pub const DEFAULT_MAX_BYTES: usize = 262_144;
 
-/// What a use case calls: chat completion, plain text completion, or an embedding.
+/// What a prompt calls: chat completion, plain text completion, or an embedding.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Kind {
     /// A chat completion: the prompt version carries `messages`.
@@ -194,7 +194,7 @@ impl<'de> Deserialize<'de> for Message {
     }
 }
 
-/// One entry of a use case's `variables`.
+/// One entry of a prompt's `variables`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct VariableDefinition {
     /// The variable name used in the template.
@@ -223,7 +223,7 @@ pub enum PayloadMode {
     None,
 }
 
-/// The use case's payload storage policy, as the document carries it.
+/// The prompt's payload storage policy, as the document carries it.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct PayloadPolicy {
     /// `full`, `hash` or `none`.
@@ -252,18 +252,18 @@ impl Default for PayloadPolicy {
     }
 }
 
-/// One use case: a single LLM call site in the app.
+/// One prompt: a single LLM call site in the app.
 #[derive(Debug, Clone, PartialEq)]
-pub struct UseCaseSpec {
-    /// The use case id.
+pub struct PromptSpec {
+    /// The prompt id.
     pub id: Option<String>,
-    /// The use case key (`diary_summary`, for example).
+    /// The prompt key (`diary_summary`, for example).
     pub key: String,
     /// Chat, text or embedding.
     pub kind: Kind,
     /// The declared prompt variables.
     pub variables: Vec<VariableDefinition>,
-    /// Parameters every deployment of this use case starts from.
+    /// Parameters every deployment of this prompt starts from.
     pub default_params: Map<String, Value>,
     /// The payload storage policy, when the document carries one.
     pub payload_policy: Option<PayloadPolicy>,
@@ -275,18 +275,18 @@ pub struct UseCaseSpec {
 pub struct Deployment {
     /// The deployment id.
     pub id: Option<String>,
-    /// The use case this deployment belongs to.
-    pub use_case_key: String,
+    /// The prompt this deployment belongs to.
+    pub prompt_key: String,
     /// The UTC-date deployment revision label, for example `v2026.09.30-1`.
     pub revision: Option<String>,
     /// The catalog id of the pinned model.
     pub model_id: Option<String>,
-    /// Parameters layered over the use case's `default_params`.
+    /// Parameters layered over the prompt's `default_params`.
     pub params: Map<String, Value>,
     /// Provider options layered over the model's `provider_options`.
     pub provider_options: Map<String, Value>,
-    /// Prompt name to prompt version id. `{}` for an embedding use case.
-    pub prompt_pins: BTreeMap<String, String>,
+    /// Prompt name to prompt version id. `{}` for an embedding prompt.
+    pub template_pins: BTreeMap<String, String>,
 }
 
 /// An immutable prompt version.
@@ -300,11 +300,11 @@ pub struct PromptVersion {
     pub number: Option<i64>,
     /// Which template engine the version was committed with.
     pub engine: Engine,
-    /// The chat messages, for a `chat` use case.
+    /// The chat messages, for a `chat` prompt.
     pub messages: Option<Vec<Message>>,
     /// Provider-visible chat tools plus PromptOn authoring metadata.
     pub tools: Option<Map<String, Value>>,
-    /// The single template string, for a `text` use case.
+    /// The single template string, for a `text` prompt.
     pub text_template: Option<String>,
 }
 
@@ -329,18 +329,18 @@ pub struct Model {
     pub status: Option<String>,
 }
 
-/// A decoded use-case document.
+/// A decoded prompt document.
 #[derive(Debug, Clone, PartialEq)]
-pub struct UseCaseDocument {
+pub struct PromptDocument {
     /// The document's schema version.
     pub schema_version: i64,
     /// The project slug the document belongs to.
     pub project: Option<String>,
     /// The environment the document belongs to.
     pub environment: Option<String>,
-    /// Use cases by key.
-    pub use_cases: BTreeMap<String, UseCaseSpec>,
-    /// Live deployments by use case key.
+    /// Prompts by key.
+    pub prompts: BTreeMap<String, PromptSpec>,
+    /// Live deployments by prompt key.
     pub deployments: BTreeMap<String, Deployment>,
     /// Prompt versions by id.
     pub prompt_versions: BTreeMap<String, PromptVersion>,
@@ -348,30 +348,30 @@ pub struct UseCaseDocument {
     pub models: BTreeMap<String, Model>,
 }
 
-/// Why a use-case document could not be decoded.
+/// Why a prompt document could not be decoded.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum DecodeError {
     /// The bytes are not JSON.
-    #[error("use-case document is not valid JSON: {0}")]
+    #[error("prompt document is not valid JSON: {0}")]
     InvalidJson(String),
-    /// The JSON is not a use-case document.
-    #[error("invalid use-case document: {0}")]
+    /// The JSON is not a prompt document.
+    #[error("invalid prompt document: {0}")]
     Invalid(String),
     /// Any document whose schema version is not the current public contract.
-    #[error("unsupported use-case document schema_version {0} (this SDK reads {SCHEMA_VERSION})")]
+    #[error("unsupported prompt document schema_version {0} (this SDK reads {SCHEMA_VERSION})")]
     UnsupportedSchemaVersion(i64),
 }
 
-impl UseCaseDocument {
+impl PromptDocument {
     /// Decodes the raw response bytes.
-    pub fn from_json(bytes: &[u8]) -> Result<(UseCaseDocument, Vec<String>), DecodeError> {
+    pub fn from_json(bytes: &[u8]) -> Result<(PromptDocument, Vec<String>), DecodeError> {
         let value: Value = serde_json::from_slice(bytes)
             .map_err(|err| DecodeError::InvalidJson(err.to_string()))?;
-        UseCaseDocument::from_value(&value)
+        PromptDocument::from_value(&value)
     }
 
     /// Decodes an already-parsed JSON value.
-    pub fn from_value(value: &Value) -> Result<(UseCaseDocument, Vec<String>), DecodeError> {
+    pub fn from_value(value: &Value) -> Result<(PromptDocument, Vec<String>), DecodeError> {
         let map = value
             .as_object()
             .ok_or_else(|| DecodeError::Invalid("top level must be an object".to_string()))?;
@@ -417,18 +417,18 @@ impl UseCaseDocument {
         };
         validate_schema1_references(map)?;
 
-        let use_cases_raw = map
+        let prompts_raw = map
             .get("prompts")
             .and_then(Value::as_object)
             .ok_or_else(|| {
                 DecodeError::Invalid("prompts is required and must be an object".to_string())
             })?;
 
-        let mut use_cases = BTreeMap::new();
-        for (key, raw) in use_cases_raw {
+        let mut prompts = BTreeMap::new();
+        for (key, raw) in prompts_raw {
             match raw.as_object() {
                 Some(raw) => {
-                    use_cases.insert(key.clone(), decode_use_case(key, raw, &mut warnings));
+                    prompts.insert(key.clone(), decode_prompt(key, raw, &mut warnings));
                 }
                 None => warnings.push(format!("prompt {key} is not an object")),
             }
@@ -481,11 +481,11 @@ impl UseCaseDocument {
         }
 
         Ok((
-            UseCaseDocument {
+            PromptDocument {
                 schema_version,
                 project: string_of(map.get("project")),
                 environment: string_of(map.get("environment")),
-                use_cases,
+                prompts,
                 deployments,
                 prompt_versions,
                 models,
@@ -494,21 +494,21 @@ impl UseCaseDocument {
         ))
     }
 
-    /// The deployment pinned for a use case, when there is one.
-    pub fn deployment(&self, use_case_key: &str) -> Option<&Deployment> {
-        self.deployments.get(use_case_key)
+    /// The deployment pinned for a prompt, when there is one.
+    pub fn deployment(&self, prompt_key: &str) -> Option<&Deployment> {
+        self.deployments.get(prompt_key)
     }
 
     /// The prompt names the live deployment pins, sorted.
-    pub fn prompt_names(&self, use_case_key: &str) -> Vec<String> {
-        match self.deployments.get(use_case_key) {
-            Some(deployment) => deployment.prompt_pins.keys().cloned().collect(),
+    pub fn template_names(&self, prompt_key: &str) -> Vec<String> {
+        match self.deployments.get(prompt_key) {
+            Some(deployment) => deployment.template_pins.keys().cloned().collect(),
             None => Vec::new(),
         }
     }
 }
 
-fn decode_use_case(key: &str, raw: &Map<String, Value>, warnings: &mut Vec<String>) -> UseCaseSpec {
+fn decode_prompt(key: &str, raw: &Map<String, Value>, warnings: &mut Vec<String>) -> PromptSpec {
     let mut variables = Vec::new();
     if let Some(entries) = raw.get("variables").and_then(Value::as_array) {
         for entry in entries {
@@ -528,7 +528,7 @@ fn decode_use_case(key: &str, raw: &Map<String, Value>, warnings: &mut Vec<Strin
         }
     }
 
-    UseCaseSpec {
+    PromptSpec {
         id: string_of(raw.get("id")),
         key: key.to_string(),
         kind: Kind::from_wire(raw.get("kind").and_then(Value::as_str)),
@@ -762,17 +762,17 @@ fn decode_deployment(key: &str, raw: &Map<String, Value>) -> Result<Deployment, 
         raw.get("prompt_version"),
         &format!("deployment {key} prompt_version"),
     )?;
-    let mut prompt_pins = BTreeMap::new();
-    prompt_pins.insert("default".to_string(), format!("{key}@{number}"));
+    let mut template_pins = BTreeMap::new();
+    template_pins.insert("default".to_string(), format!("{key}@{number}"));
 
     Ok(Deployment {
         id: None,
-        use_case_key: key.to_string(),
+        prompt_key: key.to_string(),
         revision: revision_of(raw.get("revision"))?,
         model_id: readable_model_key(raw),
         params: object_of(raw.get("params")),
         provider_options: object_of(raw.get("provider_options")),
-        prompt_pins,
+        template_pins,
     })
 }
 
@@ -906,23 +906,21 @@ mod tests {
 
     #[test]
     fn decodes_schema_one_aggregate_document() {
-        let (doc, warnings) = UseCaseDocument::from_value(&document()).unwrap();
+        let (doc, warnings) = PromptDocument::from_value(&document()).unwrap();
         assert!(warnings.is_empty());
         assert_eq!(doc.environment.as_deref(), Some("production"));
-        assert_eq!(doc.use_cases["greeting"].kind, Kind::Chat);
-        assert_eq!(doc.prompt_names("greeting"), vec!["default"]);
+        assert_eq!(doc.prompts["greeting"].kind, Kind::Chat);
+        assert_eq!(doc.template_names("greeting"), vec!["default"]);
         assert_eq!(
-            doc.use_cases["greeting"].variables[0]
-                .description
-                .as_deref(),
+            doc.prompts["greeting"].variables[0].description.as_deref(),
             Some("Display name")
         );
         assert_eq!(
-            doc.use_cases["greeting"].variables[0].example,
+            doc.prompts["greeting"].variables[0].example,
             Some(json!("Ada"))
         );
         assert_eq!(
-            doc.use_cases["greeting"]
+            doc.prompts["greeting"]
                 .payload_policy
                 .as_ref()
                 .unwrap()
@@ -942,21 +940,21 @@ mod tests {
         let mut value = document();
         value["schema_version"] = json!(3);
         assert_eq!(
-            UseCaseDocument::from_value(&value),
+            PromptDocument::from_value(&value),
             Err(DecodeError::UnsupportedSchemaVersion(3))
         );
     }
 
     #[test]
     fn accepts_schema_one_shapes_and_refuses_future_or_list() {
-        assert!(UseCaseDocument::from_value(&document()).is_ok());
-        assert!(UseCaseDocument::from_value(&readable_document()).is_ok());
-        assert!(UseCaseDocument::from_value(&readable_single_document("greeting")).is_ok());
+        assert!(PromptDocument::from_value(&document()).is_ok());
+        assert!(PromptDocument::from_value(&readable_document()).is_ok());
+        assert!(PromptDocument::from_value(&readable_single_document("greeting")).is_ok());
 
         let mut value = document();
         value["schema_version"] = json!(10);
         assert_eq!(
-            UseCaseDocument::from_value(&value),
+            PromptDocument::from_value(&value),
             Err(DecodeError::UnsupportedSchemaVersion(10))
         );
 
@@ -967,7 +965,7 @@ mod tests {
             "prompts": [{"key": "greeting", "kind": "chat"}]
         });
         assert!(matches!(
-            UseCaseDocument::from_value(&list),
+            PromptDocument::from_value(&list),
             Err(DecodeError::Invalid(message)) if message.contains("discovery-only")
         ));
     }
@@ -1011,7 +1009,7 @@ mod tests {
     fn decodes_schema_one_readable_resource_keys() {
         let value = readable_document();
 
-        let (doc, warnings) = UseCaseDocument::from_value(&value).unwrap();
+        let (doc, warnings) = PromptDocument::from_value(&value).unwrap();
         assert!(warnings.is_empty());
         assert_eq!(doc.schema_version, 1);
         assert_eq!(doc.deployments["greeting"].id, None);
@@ -1020,7 +1018,7 @@ mod tests {
             Some("openrouter:openai/gpt-4o-mini")
         );
         assert_eq!(
-            doc.deployments["greeting"].prompt_pins["default"],
+            doc.deployments["greeting"].template_pins["default"],
             "greeting@2"
         );
         assert_eq!(
@@ -1070,16 +1068,16 @@ mod tests {
     fn decodes_schema_one_single_prompt_document() {
         let value = readable_single_document("greeting");
 
-        let (doc, warnings) = UseCaseDocument::from_value(&value).unwrap();
+        let (doc, warnings) = PromptDocument::from_value(&value).unwrap();
         assert!(warnings.is_empty());
         assert_eq!(doc.schema_version, 1);
-        assert_eq!(doc.use_cases["greeting"].key, "greeting");
+        assert_eq!(doc.prompts["greeting"].key, "greeting");
         assert_eq!(
             doc.deployments["greeting"].model_id.as_deref(),
             Some("openrouter:openai/gpt-4o-mini")
         );
         assert_eq!(
-            doc.deployments["greeting"].prompt_pins["default"],
+            doc.deployments["greeting"].template_pins["default"],
             "greeting@2"
         );
         assert_eq!(
@@ -1094,10 +1092,10 @@ mod tests {
         value["prompt"]["kind"] = json!("decision");
         value["prompt_version"]["kind"] = json!("decision");
 
-        let (doc, warnings) = UseCaseDocument::from_value(&value).unwrap();
+        let (doc, warnings) = PromptDocument::from_value(&value).unwrap();
         assert!(warnings.is_empty());
         assert_eq!(
-            doc.use_cases["route"].kind,
+            doc.prompts["route"].kind,
             Kind::Other("decision".to_string())
         );
     }
@@ -1107,28 +1105,28 @@ mod tests {
         let mut mixed = readable_single_document("greeting");
         mixed["prompts"] = json!({});
         assert!(matches!(
-            UseCaseDocument::from_value(&mixed),
+            PromptDocument::from_value(&mixed),
             Err(DecodeError::Invalid(message)) if message.contains("must not include prompts")
         ));
 
         let mut bad_prompt = readable_single_document("greeting");
         bad_prompt["prompt_version"]["prompt"] = json!("other");
         assert!(matches!(
-            UseCaseDocument::from_value(&bad_prompt),
+            PromptDocument::from_value(&bad_prompt),
             Err(DecodeError::Invalid(message)) if message.contains("prompt_version.prompt other")
         ));
 
         let mut bad_version = readable_single_document("greeting");
         bad_version["deployment"]["prompt_version"] = json!(3);
         assert!(matches!(
-            UseCaseDocument::from_value(&bad_version),
+            PromptDocument::from_value(&bad_version),
             Err(DecodeError::Invalid(message)) if message.contains("deployment.prompt_version 3")
         ));
 
         let mut bad_model = readable_single_document("greeting");
         bad_model["deployment"]["model"] = json!("openai/missing");
         assert!(matches!(
-            UseCaseDocument::from_value(&bad_model),
+            PromptDocument::from_value(&bad_model),
             Err(DecodeError::Invalid(message)) if message.contains("must match model")
         ));
     }
@@ -1139,14 +1137,14 @@ mod tests {
             let mut missing = readable_document();
             missing.as_object_mut().unwrap().remove(key);
             assert!(matches!(
-                UseCaseDocument::from_value(&missing),
+                PromptDocument::from_value(&missing),
                 Err(DecodeError::Invalid(message)) if message.contains(&format!("{key} is required"))
             ));
 
             let mut array = readable_document();
             array[key] = json!([]);
             assert!(matches!(
-                UseCaseDocument::from_value(&array),
+                PromptDocument::from_value(&array),
                 Err(DecodeError::Invalid(message)) if message.contains(&format!("{key} must be an object"))
             ));
         }
@@ -1160,14 +1158,14 @@ mod tests {
             "prompt_versions": {},
             "models": {}
         });
-        let (doc, warnings) = UseCaseDocument::from_value(&empty).unwrap();
+        let (doc, warnings) = PromptDocument::from_value(&empty).unwrap();
         assert!(warnings.is_empty());
-        assert!(doc.use_cases.is_empty());
+        assert!(doc.prompts.is_empty());
 
         let mut partial_mixed = readable_document();
         partial_mixed["deployment"] = json!({});
         assert!(matches!(
-            UseCaseDocument::from_value(&partial_mixed),
+            PromptDocument::from_value(&partial_mixed),
             Err(DecodeError::Invalid(message)) if message.contains("must not include prompts")
         ));
     }
@@ -1177,14 +1175,14 @@ mod tests {
         let mut string_pin = readable_document();
         string_pin["deployments"]["greeting"]["prompt_version"] = json!("2");
         assert!(matches!(
-            UseCaseDocument::from_value(&string_pin),
+            PromptDocument::from_value(&string_pin),
             Err(DecodeError::Invalid(message)) if message.contains("deployments.greeting.prompt_version")
         ));
 
         let mut fractional_pin = readable_document();
         fractional_pin["deployments"]["greeting"]["prompt_version"] = json!(2.5);
         assert!(matches!(
-            UseCaseDocument::from_value(&fractional_pin),
+            PromptDocument::from_value(&fractional_pin),
             Err(DecodeError::Invalid(message)) if message.contains("positive integer")
         ));
 
@@ -1199,14 +1197,14 @@ mod tests {
             .unwrap()
             .insert("other@2".to_string(), version);
         assert!(matches!(
-            UseCaseDocument::from_value(&bad_version_key),
+            PromptDocument::from_value(&bad_version_key),
             Err(DecodeError::Invalid(message)) if message.contains("prompt_versions key other@2")
         ));
 
         let mut missing_model = readable_document();
         missing_model["deployments"]["greeting"]["model"] = json!("openai/missing");
         assert!(matches!(
-            UseCaseDocument::from_value(&missing_model),
+            PromptDocument::from_value(&missing_model),
             Err(DecodeError::Invalid(message)) if message.contains("missing model openrouter:openai/missing")
         ));
 
@@ -1218,7 +1216,7 @@ mod tests {
             .as_object_mut()
             .unwrap()
             .insert("openrouter:vendor:family/model".to_string(), model);
-        assert!(UseCaseDocument::from_value(&colon_model).is_ok());
+        assert!(PromptDocument::from_value(&colon_model).is_ok());
     }
 
     #[test]
@@ -1226,7 +1224,7 @@ mod tests {
         let mut missing = document();
         missing.as_object_mut().unwrap().remove("schema_version");
         assert_eq!(
-            UseCaseDocument::from_value(&missing),
+            PromptDocument::from_value(&missing),
             Err(DecodeError::Invalid(
                 "schema_version is required".to_string()
             ))
@@ -1235,7 +1233,7 @@ mod tests {
         let mut text = document();
         text["schema_version"] = json!("1");
         assert_eq!(
-            UseCaseDocument::from_value(&text),
+            PromptDocument::from_value(&text),
             Err(DecodeError::Invalid(
                 "schema_version must be an integer".to_string()
             ))
@@ -1247,7 +1245,7 @@ mod tests {
         let mut value = document();
         value["deployments"]["greeting"]["revision"] = json!(3);
         assert_eq!(
-            UseCaseDocument::from_value(&value),
+            PromptDocument::from_value(&value),
             Err(DecodeError::Invalid(
                 "deployment revision must be a string".to_string()
             ))

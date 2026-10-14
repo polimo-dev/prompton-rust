@@ -12,9 +12,9 @@ use serde_json::{json, Map, Value};
 use crate::error::Error;
 use crate::http::{parse_retry_after, HttpRequest, HttpResponse, Method, SharedHttpClient};
 
-/// The answer to a conditional deployed-use-case document request.
+/// The answer to a conditional deployed-prompt document request.
 #[derive(Debug, Clone)]
-pub(crate) enum UseCaseFetch {
+pub(crate) enum PromptFetch {
     /// `304`: the document we already hold is current.
     NotModified {
         etag: Option<String>,
@@ -103,18 +103,18 @@ impl Api {
         &self,
         environment: &str,
         etag: Option<&str>,
-    ) -> Result<UseCaseFetch, RemoteFailure> {
+    ) -> Result<PromptFetch, RemoteFailure> {
         self.snapshot_path("/prompts".to_string(), environment, etag, self.timeout)
     }
 
     pub fn prompt_snapshot(
         &self,
-        use_case: &str,
+        prompt: &str,
         environment: &str,
         etag: Option<&str>,
-    ) -> Result<UseCaseFetch, RemoteFailure> {
+    ) -> Result<PromptFetch, RemoteFailure> {
         self.snapshot_path(
-            format!("/prompts/{}", encode(use_case)),
+            format!("/prompts/{}", encode(prompt)),
             environment,
             etag,
             self.timeout.min(Duration::from_secs(1)),
@@ -127,7 +127,7 @@ impl Api {
         environment: &str,
         etag: Option<&str>,
         timeout: Duration,
-    ) -> Result<UseCaseFetch, RemoteFailure> {
+    ) -> Result<PromptFetch, RemoteFailure> {
         let mut headers = self.headers(false);
         headers.push(("connection".to_string(), "close".to_string()));
         if let Some(etag) = etag {
@@ -151,12 +151,12 @@ impl Api {
         let last_modified = response.header("last-modified").map(str::to_string);
 
         match response.status {
-            200 => Ok(UseCaseFetch::Fetched {
+            200 => Ok(PromptFetch::Fetched {
                 body: response.body,
                 etag,
                 last_modified,
             }),
-            304 => Ok(UseCaseFetch::NotModified {
+            304 => Ok(PromptFetch::NotModified {
                 etag,
                 last_modified,
             }),
@@ -164,10 +164,10 @@ impl Api {
         }
     }
 
-    pub fn prompt(&self, use_case: &str, body: &Value) -> Result<Value, RemoteFailure> {
+    pub fn prompt(&self, prompt: &str, body: &Value) -> Result<Value, RemoteFailure> {
         let response = self.send(HttpRequest {
             method: Method::Post,
-            url: format!("{}/prompts/{}/render", self.base_url, encode(use_case)),
+            url: format!("{}/prompts/{}/render", self.base_url, encode(prompt)),
             headers: self.headers(true),
             body: Some(serde_json::to_vec(body).unwrap_or_default()),
             timeout: self.timeout,

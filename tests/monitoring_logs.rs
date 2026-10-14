@@ -28,8 +28,8 @@ fn quiet_builder(server: &StubServer) -> prompton::ClientBuilder {
         .log_sink(|_| {})
 }
 
-fn record(use_case: &str) -> LogRecord {
-    let mut record = LogRecord::new(use_case, "openai/gpt-4o-mini", Status::Ok);
+fn record(prompt: &str) -> LogRecord {
+    let mut record = LogRecord::new(prompt, "openai/gpt-4o-mini", Status::Ok);
     record.latency_ms = Some(12);
     record.input = Some(json!({"text": "hi"}));
     record.output = Some(json!({"content": "hello"}));
@@ -537,9 +537,9 @@ fn test_mode_makes_no_http_calls_and_captures_records() {
         .log_sink(|_| {})
         .build()
         .unwrap();
-    client.set_use_cases(&support::greeting_document()).unwrap();
+    client.set_prompts(&support::greeting_document()).unwrap();
 
-    let resolution = client.use_case("greeting").unwrap();
+    let resolution = client.prompt("greeting").unwrap();
     resolution
         .track(CallMeta::new(), || {
             Ok(Completion::new((), Result::text("hi")))
@@ -567,8 +567,8 @@ fn the_wrapper_times_the_call_and_returns_what_the_closure_returned() {
         .log_sink(|_| {})
         .build()
         .unwrap();
-    client.set_use_cases(&support::greeting_document()).unwrap();
-    let resolution = client.use_case("greeting").unwrap();
+    client.set_prompts(&support::greeting_document()).unwrap();
+    let resolution = client.prompt("greeting").unwrap();
 
     let messages = resolution.messages(json!({"name": "Ada"})).unwrap();
     let meta = CallMeta::new()
@@ -613,8 +613,8 @@ fn track_logs_app_composed_chat_messages() {
         .log_sink(|_| {})
         .build()
         .unwrap();
-    client.set_use_cases(&support::greeting_document()).unwrap();
-    let resolution = client.use_case("greeting").unwrap();
+    client.set_prompts(&support::greeting_document()).unwrap();
+    let resolution = client.prompt("greeting").unwrap();
     let mut final_messages = resolution.messages(json!({"name": "Ada"})).unwrap();
     final_messages.push(Message::new("user", "Earlier app-owned turn"));
     final_messages.push(Message::new("user", "What should I do next?"));
@@ -651,8 +651,8 @@ fn track_preserves_native_message_content_presence() {
         .log_sink(|_| {})
         .build()
         .unwrap();
-    client.set_use_cases(&support::greeting_document()).unwrap();
-    let resolution = client.use_case("greeting").unwrap();
+    client.set_prompts(&support::greeting_document()).unwrap();
+    let resolution = client.prompt("greeting").unwrap();
     let messages = vec![
         serde_json::from_value::<Message>(
             json!({"role":"assistant","type":"native","name":"helper","reasoning":"opaque"}),
@@ -696,8 +696,8 @@ fn a_failed_call_is_logged_with_its_usage_and_the_error_propagates() {
         .log_sink(|_| {})
         .build()
         .unwrap();
-    client.set_use_cases(&support::greeting_document()).unwrap();
-    let resolution = client.use_case("greeting").unwrap();
+    client.set_prompts(&support::greeting_document()).unwrap();
+    let resolution = client.prompt("greeting").unwrap();
 
     let failure = resolution
         .track::<String, _>(CallMeta::new(), || {
@@ -730,8 +730,8 @@ fn a_panic_is_logged_as_an_app_error_and_then_resumed() {
         .log_sink(|_| {})
         .build()
         .unwrap();
-    client.set_use_cases(&support::greeting_document()).unwrap();
-    let resolution = client.use_case("greeting").unwrap();
+    client.set_prompts(&support::greeting_document()).unwrap();
+    let resolution = client.prompt("greeting").unwrap();
 
     let previous = std::panic::take_hook();
     std::panic::set_hook(Box::new(|_| {}));

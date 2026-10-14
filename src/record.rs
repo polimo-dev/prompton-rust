@@ -174,9 +174,8 @@ impl Default for Sdk {
 pub struct LogRecord {
     /// The idempotency key: a UUIDv7 the app generates before the provider call.
     pub id: String,
-    /// The use case key.
-    #[serde(rename = "prompt_key", alias = "use_case")]
-    pub use_case: String,
+    /// The prompt key.
+    pub prompt_key: String,
     /// The provider-side model string that was requested.
     pub model: String,
     /// Whether the call succeeded.
@@ -193,14 +192,9 @@ pub struct LogRecord {
     /// That revision's UTC-date label.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub deployment_revision: Option<String>,
-    /// The prompt template name that was used.
-    #[serde(
-        default,
-        rename = "template",
-        alias = "prompt",
-        skip_serializing_if = "Option::is_none"
-    )]
-    pub prompt: Option<String>,
+    /// The template name that was used.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub template: Option<String>,
     /// The pinned prompt version id retained for local evidence. It is not sent in log requests.
     #[serde(default, skip_serializing)]
     pub prompt_version_id: Option<String>,
@@ -268,17 +262,17 @@ pub struct LogRecord {
 
 impl LogRecord {
     /// A record with the five required fields; `id` is a fresh UUIDv7 and `started_at` is now.
-    pub fn new(use_case: impl Into<String>, model: impl Into<String>, status: Status) -> LogRecord {
+    pub fn new(prompt: impl Into<String>, model: impl Into<String>, status: Status) -> LogRecord {
         LogRecord {
             id: crate::uuidv7::generate(),
-            use_case: use_case.into(),
+            prompt_key: prompt.into(),
             model: model.into(),
             status,
             started_at: now_iso8601(),
             kind: None,
             deployment_id: None,
             deployment_revision: None,
-            prompt: None,
+            template: None,
             prompt_version_id: None,
             prompt_version_number: None,
             model_id: None,
@@ -306,7 +300,7 @@ impl LogRecord {
     /// Copies the resolution evidence — deployment, prompt, model and source — into the record.
     pub(crate) fn from_resolution(resolution: &Resolution, status: Status) -> LogRecord {
         let mut record = LogRecord::new(
-            resolution.use_case.clone(),
+            resolution.prompt_key.clone(),
             resolution.model.clone().unwrap_or_default(),
             status,
         );
@@ -316,8 +310,8 @@ impl LogRecord {
 
     /// Fills the resolution-derived fields of an existing record.
     pub(crate) fn apply_resolution(&mut self, resolution: &Resolution) {
-        if self.use_case.is_empty() {
-            self.use_case = resolution.use_case.clone();
+        if self.prompt_key.is_empty() {
+            self.prompt_key = resolution.prompt_key.clone();
         }
         if self.model.is_empty() {
             if let Some(model) = &resolution.model {
@@ -332,8 +326,8 @@ impl LogRecord {
         if self.deployment_revision.is_none() {
             self.deployment_revision = resolution.deployment_revision.clone();
         }
-        if self.prompt.is_none() {
-            self.prompt = resolution.prompt.clone();
+        if self.template.is_none() {
+            self.template = resolution.template.clone();
         }
         if self.prompt_version_id.is_none() {
             self.prompt_version_id = resolution.prompt_version_id.clone();
@@ -354,7 +348,7 @@ impl LogRecord {
     /// Checks the fields the server requires. Called by `log`, so an invalid record never queues.
     pub fn validate(&self) -> std::result::Result<(), crate::Error> {
         for (field, value) in [
-            ("use_case", self.use_case.as_str()),
+            ("prompt_key", self.prompt_key.as_str()),
             ("model", self.model.as_str()),
             ("started_at", self.started_at.as_str()),
         ] {
@@ -374,7 +368,7 @@ impl LogRecord {
     }
 }
 
-/// What the provider call produced, for the [`crate::UseCase::track`] wrapper.
+/// What the provider call produced, for the [`crate::Prompt::track`] wrapper.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct Result {
     /// The answer text.
@@ -527,7 +521,7 @@ pub struct CallMeta {
     pub variables: Option<Vars>,
     /// The final messages that were sent, after the app attached its own history.
     pub input_messages: Option<Vec<Message>>,
-    /// The final prompt string that was sent, for a text use case.
+    /// The final prompt string that was sent, for a text prompt.
     pub input_text: Option<String>,
     /// A stable, non-identifying reference to the end user.
     pub end_user_ref: Option<String>,
@@ -698,7 +692,7 @@ pub(crate) fn build_record(
     error: Option<&LogError>,
 ) -> LogRecord {
     let mut record = LogRecord::new(
-        resolution.use_case.clone(),
+        resolution.prompt_key.clone(),
         resolution.model.clone().unwrap_or_default(),
         status,
     );

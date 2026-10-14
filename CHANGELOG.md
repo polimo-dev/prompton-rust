@@ -48,7 +48,7 @@ All notable changes to `prompton-sdk` are recorded here. The format follows
 
 ## 0.5.0
 
-- Runtime prompt configuration is now demand-driven: `Client::use_case` fetches only
+- Runtime prompt configuration is now demand-driven: `Client::prompt` fetches only
   `GET /api/v1/prompts/{key}?environment=...` when that key is missing or stale.
 - Startup and idle clients no longer fetch or poll configuration by default. Disk and bundle
   loading remain local-only fallback tiers.
@@ -74,17 +74,17 @@ All notable changes to `prompton-sdk` are recorded here. The format follows
 
 ### Changed
 
-- Replaced the public local-resolution flow with `Client::use_case`,
-  `Client::use_case_with`, `UseCase::messages`, `UseCase::text`, and `UseCase::track`.
+- Replaced the public local-resolution flow with `Client::prompt`,
+  `Client::prompt_with`, `Prompt::messages`, `Prompt::text`, and `Prompt::track`.
 - Renamed provider-call output to `Result`, with `Result::from_openai` and
   `Result::from_anthropic` helpers for common provider response shapes.
 - Renamed monitoring record types to `LogRecord` and `LogError`, changed the runtime log endpoint
   to `POST /api/v1/logs`, and made the batch envelope `logs`.
-- Renamed the server prompt endpoint to `POST /api/v1/use-cases/{key}/prompt`, with `params`,
-  `provider_options`, `source`, and `prompt_names` in public response/log shapes.
-- Raised the deployed use-case document schema to `schema_version: 4` and documented
-  `use-cases.production.json` as the bundle filename.
-- Regenerated the Rust conformance fixtures as `use_case.json` and `log_record.json`.
+- Renamed the server prompt endpoint to `POST /api/v1/prompts/{key}/prompt`, with `params`,
+  `provider_options`, `source`, and `template_names` in public response/log shapes.
+- Raised the deployed prompt document schema to `schema_version: 4` and documented
+  `prompts.production.json` as the bundle filename.
+- Regenerated the Rust conformance fixtures as `prompt.json` and `log_record.json`.
 
 ### Removed
 
@@ -100,7 +100,7 @@ The first release of the PromptOn SDK for Rust. It reads snapshot schema version
 - `Client`: one handle per process, cheap to clone, safe to share across threads. Configured with
   `Client::from_env()` or `Client::builder()`, with the precedence explicit option > environment
   variable > default.
-- **Use-case document store** with three tiers — memory, an atomically written disk cache with an
+- **Prompt document store** with three tiers — memory, an atomically written disk cache with an
   ETag/`Last-Modified` sidecar, per-key runtime disk snapshots, and a bundle committed into the app — a 10-second memory cache, a
   background poller that refreshes with `If-None-Match`, `Retry-After` on `429`, and exponential
   backoff (×2 from the cache TTL, capped at five minutes) on `5xx`, timeouts and transport
@@ -160,6 +160,6 @@ rejects them) and on `undefined_variable_in_if_condition` (a false condition swa
 undefined variable). It deviates on two, both asserted in `every_non_normative_case_is_pinned`:
 
 - an unknown filter is a render error rather than being applied — the whitelist is also enforced
-  by `template::lint`, so such a template can never reach a use-case document;
+  by `template::lint`, so such a template can never reach a prompt document;
 - a map rendered into an output position produces compact JSON (`{"a":1}`) rather than Elixir's
   `inspect` output. Never rely on either.

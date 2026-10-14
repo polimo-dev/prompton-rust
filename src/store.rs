@@ -1,7 +1,7 @@
-//! The snapshot store keeps immutable documents per use case, plus disk and bundle fallbacks.
+//! The snapshot store keeps immutable documents per prompt, plus disk and bundle fallbacks.
 //! A model call never fails because PromptOn did.
 //!
-//! * **Memory** holds the last good document for each use case and answers every resolve, with no
+//! * **Memory** holds the last good document for each prompt and answers every resolve, with no
 //!   HTTP call inside the cache TTL (10 s by default).
 //! * **Disk** is written atomically (temp file, then rename) with a sidecar holding the ETag and
 //!   `Last-Modified`, and is loaded at start.
@@ -9,7 +9,7 @@
 //!   in a serverless runtime it is the primary cold-start fallback, not a nicety.
 //!
 //! Load order on start is memory → disk → bundle. Remote fetches happen on demand for the requested
-//! use case. A document for another environment or project is never used. A refresh that fails,
+//! prompt. A document for another environment or project is never used. A refresh that fails,
 //! times out or is rate-limited leaves the previous document in place; only when no tier has a
 //! document does resolution fail.
 
@@ -23,16 +23,16 @@ use std::time::{Duration, Instant, SystemTime};
 
 use serde_json::{json, Value};
 
-use crate::api::{Api, UseCaseFetch};
+use crate::api::{Api, PromptFetch};
 use crate::config::{Config, MAX_BACKOFF};
 use crate::error::Error;
 use crate::logger::Logger;
 use crate::resolver::{self, Resolution, ResolveOptions, Source};
-use crate::snapshot::UseCaseDocument;
+use crate::snapshot::PromptDocument;
 
 /// What the store currently holds, for dashboards and health checks.
 #[derive(Debug, Clone, PartialEq)]
-pub struct UseCaseDocumentInfo {
+pub struct PromptDocumentInfo {
     /// Which tier the document came from; `None` when there is no document at all.
     pub source: Option<Source>,
     /// The document's ETag.
@@ -57,7 +57,7 @@ pub struct UseCaseDocumentInfo {
 
 #[derive(Debug)]
 pub(crate) struct Entry {
-    pub document: Arc<UseCaseDocument>,
+    pub document: Arc<PromptDocument>,
     pub raw: Arc<Vec<u8>>,
     pub etag: Option<String>,
     pub last_modified: Option<String>,
@@ -137,7 +137,7 @@ impl Store {
                 Ok(bytes) => bytes,
                 Err(_) => continue,
             };
-            let (document, warnings) = match UseCaseDocument::from_json(&bytes) {
+            let (document, warnings) = match PromptDocument::from_json(&bytes) {
                 Ok(decoded) => decoded,
                 Err(_) => continue,
             };
@@ -165,7 +165,7 @@ impl Store {
                 refreshed_at: Instant::now(),
                 stale: true,
             };
-            for key in entry.document.use_cases.keys().cloned().collect::<Vec<_>>() {
+            for key in entry.document.prompts.keys().cloned().collect::<Vec<_>>() {
                 self.install_key(
                     &key,
                     Entry {
@@ -196,7 +196,7 @@ impl Store {
         };
 
         // A partially written or corrupt file is ignored, not an error: a later demand fetch fixes it.
-        let (document, warnings) = match UseCaseDocument::from_json(&bytes) {
+        let (document, warnings) = match PromptDocument::from_json(&bytes) {
             Ok(decoded) => decoded,
             Err(error) => {
                 self.logger.say(format!(
@@ -240,7 +240,7 @@ impl Store {
     }
 
     /// A document for another environment or project is never used.
-    fn accept(&self, document: &UseCaseDocument) -> Result<(), String> {
+    fn accept(&self, document: &PromptDocument) -> Result<(), String> {
         if let Some(environment) = &document.environment {
             if environment != &self.config.environment {
                 return Err(format!(
@@ -265,21 +265,21 @@ impl Store {
             .or_else(|| state.per_key.values().next().cloned())
     }
 
-    fn current_key(&self, use_case: &str) -> Option<Arc<Entry>> {
+    fn current_key(&self, prompt: &str) -> Option<Arc<Entry>> {
         let state = self.state.lock().ok()?;
-        state.per_key.get(use_case).cloned().or_else(|| {
+        state.per_key.get(prompt).cloned().or_else(|| {
             state
                 .entry
                 .clone()
-                .filter(|entry| entry.document.use_cases.contains_key(use_case))
+                .filter(|entry| entry.document.prompts.contains_key(prompt))
         })
     }
 
-    fn current_for_resolve(&self, use_case: &str) -> Option<Arc<Entry>> {
+    fn current_for_resolve(&self, prompt: &str) -> Option<Arc<Entry>> {
         let state = self.state.lock().ok()?;
         state
             .per_key
-            .get(use_case)
+            .get(prompt)
             .cloned()
             .or_else(|| state.entry.clone())
     }
@@ -287,21 +287,21 @@ impl Store {
     fn install(&self, entry: Entry) {
         if let Ok(mut state) = self.state.lock() {
             let entry = Arc::new(entry);
-            for key in entry.document.use_cases.keys() {
+            for key in entry.document.prompts.keys() {
                 state.per_key.insert(key.clone(), entry.clone());
             }
             state.entry = Some(entry);
         }
     }
 
-    fn install_key(&self, use_case: &str, entry: Entry) {
+    fn install_key(&self, prompt: &str, entry: Entry) {
         if let Ok(mut state) = self.state.lock() {
-            state.per_key.insert(use_case.to_string(), Arc::new(entry));
+            state.per_key.insert(prompt.to_string(), Arc::new(entry));
         }
     }
 
     /// Replaces the document from the app's own hands (test mode, or a manual override).
-    pub fn put_document(&self, document: UseCaseDocument, raw: Vec<u8>, source: Source) {
+    pub fn put_document(&self, document: PromptDocument, raw: Vec<u8>, source: Source) {
         self.install(Entry {
             document: Arc::new(document),
             raw: Arc::new(raw),
@@ -314,13 +314,13 @@ impl Store {
         });
     }
 
-    /// Resolves against the document cached for this use case.
+    /// Resolves against the document cached for this prompt.
     pub(crate) fn resolve(
         &self,
-        use_case: &str,
+        prompt: &str,
         options: &ResolveOptions,
     ) -> Result<Resolution, Error> {
-        let entry = self.current_for_resolve(use_case).ok_or_else(|| {
+        let entry = self.current_for_resolve(prompt).ok_or_else(|| {
             Error::NotReady(format!(
                 "no snapshot for environment {:?}",
                 self.config.environment
@@ -329,33 +329,33 @@ impl Store {
 
         resolver::resolve(
             &entry.document,
-            use_case,
+            prompt,
             options,
             entry.source,
             entry.etag.as_deref(),
         )
     }
 
-    /// The prompt names cached for a use case.
-    pub fn prompt_names(&self, use_case: &str) -> Result<Vec<String>, Error> {
-        let entry = self.current_key(use_case).ok_or_else(|| {
+    /// The prompt names cached for a prompt.
+    pub fn template_names(&self, prompt: &str) -> Result<Vec<String>, Error> {
+        let entry = self.current_key(prompt).ok_or_else(|| {
             Error::NotReady(format!(
                 "no snapshot for environment {:?}",
                 self.config.environment
             ))
         })?;
-        if !entry.document.use_cases.contains_key(use_case) {
-            return Err(Error::UnknownUseCase(use_case.to_string()));
+        if !entry.document.prompts.contains_key(prompt) {
+            return Err(Error::UnknownPrompt(prompt.to_string()));
         }
-        Ok(entry.document.prompt_names(use_case))
+        Ok(entry.document.template_names(prompt))
     }
 
-    /// The payload policy the snapshot carries for a use case, when it has one.
-    pub fn payload_policy(&self, use_case: &str) -> Option<crate::snapshot::PayloadPolicy> {
-        self.current_key(use_case)?
+    /// The payload policy the snapshot carries for a prompt, when it has one.
+    pub fn payload_policy(&self, prompt: &str) -> Option<crate::snapshot::PayloadPolicy> {
+        self.current_key(prompt)?
             .document
-            .use_cases
-            .get(use_case)?
+            .prompts
+            .get(prompt)?
             .payload_policy
             .clone()
     }
@@ -363,16 +363,16 @@ impl Store {
     /// Fetches the full document once, synchronously, and installs the result. This is the
     /// explicit "fetch now" path used by scripts and bundle export flows.
     pub fn refresh_now(&self) -> Result<(), Error> {
-        // Runtime refresh is demand-driven by use_case(key). A no-arg refresh must
+        // Runtime refresh is demand-driven by prompt(key). A no-arg refresh must
         // not bulk-fetch all prompts.
         Ok(())
     }
 
-    /// Ensures the requested use case has a fresh-enough remote document. This is the runtime
+    /// Ensures the requested prompt has a fresh-enough remote document. This is the runtime
     /// demand path: it fetches only `/prompts/{key}`, waits at most one second, and falls back to
     /// the last entry on failure. Concurrent callers for the same key share one request; different
     /// keys proceed independently.
-    pub fn refresh_key_if_needed(self: &Arc<Self>, use_case: &str) {
+    pub fn refresh_key_if_needed(self: &Arc<Self>, prompt: &str) {
         if !self.config.remote_enabled() {
             return;
         }
@@ -386,8 +386,8 @@ impl Store {
 
         loop {
             let now = Instant::now();
-            if let Some(entry) = state.per_key.get(use_case).or(state.entry.as_ref()) {
-                if entry.document.use_cases.contains_key(use_case)
+            if let Some(entry) = state.per_key.get(prompt).or(state.entry.as_ref()) {
+                if entry.document.prompts.contains_key(prompt)
                     && entry.source == Source::Remote
                     && entry.refreshed_at.elapsed() < self.config.demand_cache_ttl
                 {
@@ -395,7 +395,7 @@ impl Store {
                 }
             }
 
-            if state.inflight.contains_key(use_case) {
+            if state.inflight.contains_key(prompt) {
                 let remaining = deadline.saturating_duration_since(now);
                 if remaining == Duration::ZERO {
                     return;
@@ -412,21 +412,21 @@ impl Store {
 
             if state
                 .next_attempts
-                .get(use_case)
+                .get(prompt)
                 .is_some_and(|next| *next > now)
             {
                 return;
             }
 
             let token = self.fetch_tokens.fetch_add(1, Ordering::Relaxed) + 1;
-            state.inflight.insert(use_case.to_string(), token);
+            state.inflight.insert(prompt.to_string(), token);
             state
                 .next_attempts
-                .insert(use_case.to_string(), now + self.config.demand_cache_ttl);
+                .insert(prompt.to_string(), now + self.config.demand_cache_ttl);
             drop(state);
 
             let store = self.clone();
-            let key = use_case.to_string();
+            let key = prompt.to_string();
             let _ = std::thread::Builder::new()
                 .name("prompton-config-fetch".to_string())
                 .spawn(move || {
@@ -443,7 +443,7 @@ impl Store {
                 Ok(state) => state,
                 Err(poisoned) => poisoned.into_inner(),
             };
-            while state.inflight.contains_key(use_case) {
+            while state.inflight.contains_key(prompt) {
                 let now = Instant::now();
                 let remaining = deadline.saturating_duration_since(now);
                 if remaining == Duration::ZERO {
@@ -467,19 +467,19 @@ impl Store {
         self.fetches.fetch_add(1, Ordering::Relaxed);
 
         match self.api.snapshot(&self.config.environment, etag.as_deref()) {
-            Ok(UseCaseFetch::NotModified {
+            Ok(PromptFetch::NotModified {
                 etag,
                 last_modified,
             }) => {
                 self.confirm(etag, last_modified);
                 Ok(())
             }
-            Ok(UseCaseFetch::Fetched {
+            Ok(PromptFetch::Fetched {
                 body,
                 etag,
                 last_modified,
             }) => {
-                let (document, warnings) = match UseCaseDocument::from_json(&body) {
+                let (document, warnings) = match PromptDocument::from_json(&body) {
                     Ok(decoded) => decoded,
                     Err(error) => {
                         self.record_failure(None);
@@ -539,9 +539,9 @@ impl Store {
         }
     }
 
-    fn fetch_key(&self, use_case: &str, deadline: Instant) -> Result<(), Error> {
-        let etag = self.current_key(use_case).and_then(|entry| {
-            if entry.document.use_cases.contains_key(use_case) {
+    fn fetch_key(&self, prompt: &str, deadline: Instant) -> Result<(), Error> {
+        let etag = self.current_key(prompt).and_then(|entry| {
+            if entry.document.prompts.contains_key(prompt) {
                 entry.etag.clone()
             } else {
                 None
@@ -551,39 +551,39 @@ impl Store {
 
         match self
             .api
-            .prompt_snapshot(use_case, &self.config.environment, etag.as_deref())
+            .prompt_snapshot(prompt, &self.config.environment, etag.as_deref())
         {
-            Ok(UseCaseFetch::NotModified {
+            Ok(PromptFetch::NotModified {
                 etag,
                 last_modified,
             }) => {
                 if Instant::now() > deadline {
-                    self.record_key_failure(use_case, None);
+                    self.record_key_failure(prompt, None);
                     return Err(Error::Transport(
                         "config fetch exceeded the 1s budget".to_string(),
                     ));
                 }
-                if let Some(entry) = self.current_key(use_case) {
-                    self.confirm_key(use_case, &entry, etag, last_modified);
+                if let Some(entry) = self.current_key(prompt) {
+                    self.confirm_key(prompt, &entry, etag, last_modified);
                     Ok(())
                 } else {
-                    self.record_key_failure(use_case, None);
+                    self.record_key_failure(prompt, None);
                     Err(Error::NotReady(format!(
-                        "config fetch for {use_case:?} returned 304 without a cached document"
+                        "config fetch for {prompt:?} returned 304 without a cached document"
                     )))
                 }
             }
-            Ok(UseCaseFetch::Fetched {
+            Ok(PromptFetch::Fetched {
                 body,
                 etag,
                 last_modified,
             }) => {
-                let (document, warnings) = match UseCaseDocument::from_json(&body) {
+                let (document, warnings) = match PromptDocument::from_json(&body) {
                     Ok(decoded) => decoded,
                     Err(error) => {
-                        self.record_key_failure(use_case, None);
+                        self.record_key_failure(prompt, None);
                         self.logger.say(format!(
-                            "config fetch for {use_case} returned an unusable document: {error}"
+                            "config fetch for {prompt} returned an unusable document: {error}"
                         ));
                         return Err(Error::Decode(error));
                     }
@@ -593,19 +593,19 @@ impl Store {
                         .say_once(&warning, format!("snapshot: {warning}"));
                 }
                 if let Err(reason) = self.accept(&document) {
-                    self.record_key_failure(use_case, None);
+                    self.record_key_failure(prompt, None);
                     self.logger
                         .say(format!("refusing the fetched snapshot: {reason}"));
                     return Err(Error::Config(reason));
                 }
-                if !document.use_cases.contains_key(use_case) {
-                    self.record_key_failure(use_case, None);
+                if !document.prompts.contains_key(prompt) {
+                    self.record_key_failure(prompt, None);
                     return Err(Error::Config(format!(
-                        "config fetch for {use_case:?} returned another use case"
+                        "config fetch for {prompt:?} returned another prompt"
                     )));
                 }
                 if Instant::now() > deadline {
-                    self.record_key_failure(use_case, None);
+                    self.record_key_failure(prompt, None);
                     return Err(Error::Transport(
                         "config fetch exceeded the 1s budget".to_string(),
                     ));
@@ -622,26 +622,21 @@ impl Store {
                     stale: false,
                 };
                 let raw = entry.raw.clone();
-                self.install_key(use_case, entry);
-                self.write_key_disk_cache(
-                    use_case,
-                    &raw,
-                    etag.as_deref(),
-                    last_modified.as_deref(),
-                );
+                self.install_key(prompt, entry);
+                self.write_key_disk_cache(prompt, &raw, etag.as_deref(), last_modified.as_deref());
                 if let Ok(mut state) = self.state.lock() {
                     state.failures = 0;
-                    state.next_attempts.remove(use_case);
+                    state.next_attempts.remove(prompt);
                 }
                 Ok(())
             }
             Err(failure) => {
                 self.record_key_failure(
-                    use_case,
+                    prompt,
                     Some(self.config.demand_cache_ttl).or(failure.retry_after),
                 );
                 self.logger.say(format!(
-                    "config fetch for {use_case} failed ({}); serving the cached document if present",
+                    "config fetch for {prompt} failed ({}); serving the cached document if present",
                     failure.error
                 ));
                 Err(failure.error)
@@ -667,7 +662,7 @@ impl Store {
                     refreshed_at: Instant::now(),
                     stale: false,
                 });
-                for key in fresh.document.use_cases.keys() {
+                for key in fresh.document.prompts.keys() {
                     state.per_key.insert(key.clone(), fresh.clone());
                 }
                 state.entry = Some(fresh);
@@ -677,15 +672,15 @@ impl Store {
 
     fn confirm_key(
         &self,
-        use_case: &str,
+        prompt: &str,
         entry: &Arc<Entry>,
         etag: Option<String>,
         last_modified: Option<String>,
     ) {
         if let Ok(mut state) = self.state.lock() {
-            state.next_attempts.remove(use_case);
+            state.next_attempts.remove(prompt);
             state.per_key.insert(
-                use_case.to_string(),
+                prompt.to_string(),
                 Arc::new(Entry {
                     document: entry.document.clone(),
                     raw: entry.raw.clone(),
@@ -724,19 +719,19 @@ impl Store {
         }
     }
 
-    fn record_key_failure(&self, use_case: &str, retry_after: Option<Duration>) {
+    fn record_key_failure(&self, prompt: &str, retry_after: Option<Duration>) {
         if let Ok(mut state) = self.state.lock() {
             state.failures = state.failures.saturating_add(1);
-            if !state.next_attempts.contains_key(use_case) {
+            if !state.next_attempts.contains_key(prompt) {
                 let wait = retry_after.unwrap_or(self.config.demand_cache_ttl);
                 state
                     .next_attempts
-                    .insert(use_case.to_string(), Instant::now() + wait);
+                    .insert(prompt.to_string(), Instant::now() + wait);
             }
-            if let Some(entry) = state.per_key.get(use_case).cloned() {
+            if let Some(entry) = state.per_key.get(prompt).cloned() {
                 if !entry.stale {
                     state.per_key.insert(
-                        use_case.to_string(),
+                        prompt.to_string(),
                         Arc::new(Entry {
                             document: entry.document.clone(),
                             raw: entry.raw.clone(),
@@ -758,7 +753,7 @@ impl Store {
         self.fetches.load(Ordering::Relaxed)
     }
 
-    pub fn info(&self) -> UseCaseDocumentInfo {
+    pub fn info(&self) -> PromptDocumentInfo {
         let state = match self.state.lock() {
             Ok(state) => state,
             Err(poisoned) => poisoned.into_inner(),
@@ -768,7 +763,7 @@ impl Store {
             .as_ref()
             .or_else(|| state.per_key.values().next());
         match entry {
-            None => UseCaseDocumentInfo {
+            None => PromptDocumentInfo {
                 source: None,
                 etag: None,
                 last_modified: None,
@@ -780,7 +775,7 @@ impl Store {
                 stale: true,
                 failures: state.failures,
             },
-            Some(entry) => UseCaseDocumentInfo {
+            Some(entry) => PromptDocumentInfo {
                 source: Some(entry.source),
                 etag: entry.etag.clone(),
                 last_modified: entry.last_modified.clone(),
@@ -817,7 +812,7 @@ impl Store {
 
     fn write_key_disk_cache(
         &self,
-        use_case: &str,
+        prompt: &str,
         body: &[u8],
         etag: Option<&str>,
         last_modified: Option<&str>,
@@ -826,7 +821,7 @@ impl Store {
             Some(path) => path,
             None => return,
         };
-        let path = key_cache_path(&full_path, use_case);
+        let path = key_cache_path(&full_path, prompt);
         let document_environment = Some(self.config.environment.as_str());
         let result = write_atomically(&path, body).and_then(|()| {
             write_atomically(

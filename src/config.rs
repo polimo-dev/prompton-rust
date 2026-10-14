@@ -26,9 +26,9 @@ pub const MAX_BACKOFF: Duration = Duration::from_secs(300);
 /// How the SDK behaves with respect to the network.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Mode {
-    /// Poll PromptOn, read use cases locally, send monitoring logs.
+    /// Poll PromptOn, read prompts locally, send monitoring logs.
     Live,
-    /// Never touch the network: read use cases from the disk cache and the bundle only.
+    /// Never touch the network: read prompts from the disk cache and the bundle only.
     Offline,
     /// Never touch the network and capture monitoring logs in memory for assertions.
     Test,
@@ -98,7 +98,7 @@ pub struct Config {
     pub request_timeout: Duration,
     /// Where the disk cache lives.
     pub disk_cache: DiskCache,
-    /// A use-case document file shipped inside the app, used when memory and disk are empty.
+    /// A prompt document file shipped inside the app, used when memory and disk are empty.
     pub bundle: Option<PathBuf>,
     /// Live, offline or test.
     pub mode: Mode,
@@ -106,12 +106,12 @@ pub struct Config {
     pub hash_end_user: bool,
     /// Whether to run the background poller. Defaults to false; normal runtime fetches are demand-driven.
     pub poll: bool,
-    /// Whether to fetch the use-case document synchronously at start when no tier has one.
+    /// Whether to fetch the prompt document synchronously at start when no tier has one.
     /// Defaults to false so idle processes do not contact PromptOn.
     pub fetch_on_start: bool,
     /// The monitoring-log buffer's thresholds.
     pub log: LogConfig,
-    /// The policy for a use case whose document entry carries none.
+    /// The policy for a prompt whose document entry carries none.
     pub payload_defaults: PayloadPolicy,
     /// The app's redaction hook.
     pub redact: Option<RedactHook>,
@@ -275,7 +275,7 @@ impl ClientBuilder {
         self
     }
 
-    /// A use-case document file shipped inside the app, used when memory and disk are empty.
+    /// A prompt document file shipped inside the app, used when memory and disk are empty.
     pub fn bundle(mut self, path: impl Into<PathBuf>) -> ClientBuilder {
         self.bundle = Some(path.into());
         self
@@ -294,14 +294,14 @@ impl ClientBuilder {
     }
 
     /// Controls the legacy background poller. The default is off; normal runtime refreshes happen
-    /// when a `use_case` call needs configuration and the cached value is stale or missing.
+    /// when a `prompt` call needs configuration and the cached value is stale or missing.
     pub fn poll(mut self, poll: bool) -> ClientBuilder {
         self.poll = Some(poll);
         self
     }
 
-    /// Whether a cold start (nothing in memory, on disk or in the bundle) fetches the use-case document
-    /// synchronously before [`ClientBuilder::build`] returns. Off by default: the first `use_case`
+    /// Whether a cold start (nothing in memory, on disk or in the bundle) fetches the prompt document
+    /// synchronously before [`ClientBuilder::build`] returns. Off by default: the first `prompt`
     /// call performs the demand fetch for that key.
     pub fn fetch_on_start(mut self, fetch_on_start: bool) -> ClientBuilder {
         self.fetch_on_start = Some(fetch_on_start);
@@ -314,7 +314,7 @@ impl ClientBuilder {
         self
     }
 
-    /// The payload policy for a use case whose document entry carries none.
+    /// The payload policy for a prompt whose document entry carries none.
     pub fn payload_defaults(mut self, defaults: PayloadPolicy) -> ClientBuilder {
         self.payload_defaults = Some(defaults);
         self
@@ -430,11 +430,11 @@ pub fn project_from_key(api_key: &str) -> Option<String> {
     }
 }
 
-/// The default disk-cache path: `<os cache dir>/prompton/<project>.<environment>.use-cases.json`.
+/// The default disk-cache path: `<os cache dir>/prompton/<project>.<environment>.prompts.json`.
 pub fn default_cache_path(project: &str, environment: &str) -> PathBuf {
     let base = cache_root();
     base.join("prompton")
-        .join(format!("{project}.{environment}.use-cases.json"))
+        .join(format!("{project}.{environment}.prompts.json"))
 }
 
 fn cache_root() -> PathBuf {

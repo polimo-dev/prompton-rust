@@ -27,10 +27,10 @@ const SAMPLE_SCALE: u32 = 10_000;
 /// A user hook that gets the last word on every record before it is queued.
 pub type RedactHook = Arc<dyn Fn(Value) -> Value + Send + Sync>;
 
-/// The SDK-side inputs to the policy that do not come from the use-case document.
+/// The SDK-side inputs to the policy that do not come from the prompt document.
 #[derive(Clone, Default)]
 pub struct PayloadConfig {
-    /// The policy used for a use case whose document entry carries none.
+    /// The policy used for a prompt whose document entry carries none.
     pub defaults: PayloadPolicy,
     /// Send `sha256(end_user_ref)` instead of the raw reference.
     pub hash_end_user: bool,
@@ -68,7 +68,7 @@ pub(crate) fn scrub_retired_log_refs(mut record: Map<String, Value>) -> Map<Stri
     record
 }
 
-/// Merges a use-case document policy with the SDK defaults and clamps the values.
+/// Merges a prompt document policy with the SDK defaults and clamps the values.
 pub fn normalize_policy(policy: Option<&PayloadPolicy>, defaults: &PayloadPolicy) -> PayloadPolicy {
     let mut policy = policy.cloned().unwrap_or_else(|| defaults.clone());
     policy.sample_rate = policy.sample_rate.clamp(0.0, 1.0);

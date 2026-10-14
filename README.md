@@ -1,19 +1,19 @@
 # prompton-sdk — the PromptOn SDK for Rust
 
 PromptOn is the control plane for your app's LLM prompts. Every place your code calls a model
-becomes a **use case**, and for each use case and environment PromptOn holds one **pin**: a prompt
+becomes a **prompt**, and for each prompt and environment PromptOn holds one **pin**: a prompt
 version, one model, and its parameters. Your app fetches that configuration and then calls the
 provider **itself**, with your own key and your own HTTP client.
 
 PromptOn is config-fetch, **not a proxy**. It is never in the request path, it never sees your
 provider key, and if it is down your app keeps running on the last prompt document it received. After each
 call your app sends back a **monitoring log**, and those logs are how you see cost, latency, error
-rate and stop reasons per use case.
+rate and stop reasons per prompt.
 
 ```text
-use_case("greeting")           → model, params and prompt                  (from memory, no HTTP)
-use_case.messages(vars)        → the messages to send
-use_case.track(…, || …)        → your provider call, timed and logged
+prompt("greeting")           → model, params and prompt                  (from memory, no HTTP)
+prompt.messages(vars)        → the messages to send
+prompt.track(…, || …)        → your provider call, timed and logged
 ```
 
 ## Install
@@ -40,12 +40,12 @@ the provider actually saw.
 use prompton::{CallMeta, Client, Completion, Result};
 
 let prompton = Client::from_env()?;                                  // PTN_HOST, PTN_API_KEY
-let use_case = prompton.use_case("greeting")?;                        // model, params, prompt
-let mut messages = use_case.messages(serde_json::json!({"name": "Ada"}))?;
+let prompt = prompton.prompt("greeting")?;                        // model, params, prompt
+let mut messages = prompt.messages(serde_json::json!({"name": "Ada"}))?;
 messages.extend(load_chat_history("user-42")?);
 messages.push(prompton::Message::new("user", "Please greet Ada."));
-let answer = use_case.track(CallMeta::new().input_messages(messages.clone()), || {
-    let text = my_provider.chat(&use_case.model, &messages);          // your key, your client
+let answer = prompt.track(CallMeta::new().input_messages(messages.clone()), || {
+    let text = my_provider.chat(&prompt.model, &messages);          // your key, your client
     Ok(Completion::new(text.clone(), Result::text(text).with_finish_reason("stop")))
 })?;
 ```
@@ -59,9 +59,9 @@ and on an inline prompt document if it is not.
 
 ### Using it from an async runtime
 
-`use_case` may perform a 1-second bounded config fetch when that key is missing or stale.
-`messages`, `text`, `log` and `UseCase::track` do no network I/O of their own: they read memory and
-queue work. Call `use_case`, `flush`, `refresh`, `prompt_remote` and `export_use_cases` from
+`prompt` may perform a 1-second bounded config fetch when that key is missing or stale.
+`messages`, `text`, `log` and `Prompt::track` do no network I/O of their own: they read memory and
+queue work. Call `prompt`, `flush`, `refresh`, `render_prompt` and `export_prompts` from
 `tokio::task::spawn_blocking` or on a thread of your own when you are inside an async runtime.
 
 ## Configuration
@@ -77,13 +77,13 @@ Every option follows **explicit option > environment variable > default**.
 | `.project(slug)` | `PTN_PROJECT` | from the key | Names the default disk-cache file and guards against another project's prompt document |
 | `.cache_ttl(duration)` | — | 10 s | Legacy full-document and remote prompt cache TTL. Runtime config fetch freshness and attempt gates are fixed at 10s by the SDK contract |
 | `.request_timeout(duration)` | — | 5 s | Per-request timeout; runtime config fetches are also capped at 1 second |
-| `.disk_cache_path(path)` / `.without_disk_cache()` | — | OS cache dir | `<cache>/prompton/<project>.<environment>.use-cases.json`, written atomically with a `.meta.json` sidecar |
+| `.disk_cache_path(path)` / `.without_disk_cache()` | — | OS cache dir | `<cache>/prompton/<project>.<environment>.prompts.json`, written atomically with a `.meta.json` sidecar |
 | `.bundle(path)` | — | none | A prompt document shipped inside the app, used when memory and disk are empty |
 | `.mode(Mode::Live \| Offline \| Test)` | — | `Live` | `Offline` never touches the network; `Test` also captures records in memory |
-| `.poll(bool)` | — | `false` | Legacy switch retained for compatibility; ignored because runtime config refresh is demand-driven by `use_case` |
+| `.poll(bool)` | — | `false` | Legacy switch retained for compatibility; ignored because runtime config refresh is demand-driven by `prompt` |
 | `.fetch_on_start(bool)` | — | `false` | Whether a cold start with nothing cached fetches once before `build()` returns |
 | `.log_config(LogConfig { … })` | — | 2 s / 100 records / 1 MB / 10 000 queued / 8 attempts | The monitoring-log buffer's triggers and limits |
-| `.payload_defaults(policy)` | — | `full`, 1.0, 256 KB | The payload policy for a use case whose document entry carries none |
+| `.payload_defaults(policy)` | — | `full`, 1.0, 256 KB | The payload policy for a prompt whose document entry carries none |
 | `.hash_end_user(bool)` | — | `false` | Send `sha256(end_user_ref)` instead of the raw reference |
 | `.redact(fn)` | — | none | A hook that gets the last word on every record before it is queued |
 | `.http_client(client)` | — | `ureq` | Any `HttpClient`: a proxy, an instrumented client, a test double |
@@ -94,20 +94,20 @@ Every option follows **explicit option > environment variable > default**.
 The single most important behaviour of this SDK: **a model call never fails because PromptOn did.**
 Configuration goes stale in the worst case, never absent.
 
-- **Fetch on demand.** Startup and idle clients do not contact PromptOn. `Client::use_case(key)` is
+- **Fetch on demand.** Startup and idle clients do not contact PromptOn. `Client::prompt(key)` is
   the runtime config boundary. When that key is missing or stale, the SDK sends one conditional
   `GET /api/v1/prompts/{key}?environment=...` request. Within the 10-second freshness window it
   serves memory with no HTTP call.
 - **Rate limit and fallback.** Each key has a 10-second attempt gate, measured from attempt start.
   Same-key concurrent callers share the in-flight request. Runtime config fetch has a 1-second
-  total budget and no retry. A custom `HttpClient` is called once; the SDK-level outer budget still makes `use_case` fall back after 1 second even if that transport ignores its timeout. On transport errors, `429`, `5xx`, invalid payloads, scope mismatch,
+  total budget and no retry. A custom `HttpClient` is called once; the SDK-level outer budget still makes `prompt` fall back after 1 second even if that transport ignores its timeout. On transport errors, `429`, `5xx`, invalid payloads, scope mismatch,
   or timeout, the SDK serves the last valid value for that key, even when expired. If none exists,
-  `use_case` returns `Error::NotReady`.
+  `prompt` returns `Error::NotReady`.
 - **Three tiers, in order: memory → disk → bundle → remote on demand.** The disk cache is written atomically
   (temp file, then rename) with a sidecar holding the ETag and `Last-Modified`; several processes
   on one host may share it, a reader tolerates a concurrent rename, and a corrupt or partial file is
   ignored rather than fatal. The bundle is a prompt document committed into the repository
-  (`client.export_use_cases("use-cases.production.json")`, refreshed by your build) — in a serverless
+  (`client.export_prompts("prompts.production.json")`, refreshed by your build) — in a serverless
   or scale-to-zero runtime it is the primary cold-start fallback, not a nicety.
 - **No external services, ever.** No database, no Redis, no shared store: memory, one local file and
   the bundled file are the only tiers. Instances never coordinate; each keeps its own copy.
@@ -124,11 +124,11 @@ that logs still happen on the cached prompt document.
 | when | what you see |
 |---|---|
 | a demand fetch times out, or answers `5xx` or `429` | the previous prompt document keeps serving, and the SDK says so on its log sink |
-| PromptOn is down on first demand fetch | the disk cache, then the bundle, answer `use_case`; `source` records which |
+| PromptOn is down on first demand fetch | the disk cache, then the bundle, answer `prompt`; `source` records which |
 | nothing is cached anywhere | `Error::NotReady` — the only error worth retrying |
-| the use case is not in the prompt document | `Error::UnknownUseCase` |
-| the use case has no live deployment here | `Error::Unresolved` — a bug in the deployment, **never** a reason to fall back to a hard-coded prompt |
-| the prompt name is not pinned | `Error::UnknownPrompt { prompt_names, … }` — there is no silent fallback to `default` |
+| the prompt is not in the prompt document | `Error::UnknownPrompt` |
+| the prompt has no live deployment here | `Error::Unresolved` — a bug in the deployment, **never** a reason to fall back to a hard-coded prompt |
+| the prompt name is not pinned | `Error::UnknownPrompt { template_names, … }` — there is no silent fallback to `default` |
 | a variable the template needs is missing | `Error::Template(TemplateError::MissingVariable(name))`, with `error.missing_variable()` |
 | a monitoring log cannot be sent | it is retried with the same ids, then dropped and counted in `client.log_stats()` |
 | a routine closed-connection provider error reports `%Req.TransportError{reason: :closed}` | the generation log or completion trace event is skipped before sending; your provider result/error is unchanged |
@@ -143,7 +143,7 @@ it before a short-lived process exits. `flush` is the one path that sends even i
 `Retry-After`, because you asked explicitly; the background sender and shutdown both wait.
 
 ```rust
-let result = use_case.track(
+let result = prompt.track(
     CallMeta::new()
         .variables(serde_json::json!({"name": "Ada"}))
         .input_messages(messages)
@@ -169,13 +169,13 @@ keys, no `PTN_API_KEY`, no user PII beyond `end_user_ref`.
 | field | filled by | notes |
 |---|---|---|
 | `id` | the SDK | a UUIDv7, generated before the call; the idempotency key. A resend is counted as a duplicate, never stored twice |
-| `use_case`, `model`, `status`, `started_at` | the SDK | the four required fields besides `id` |
-| `kind` | the use case | `chat`, `text` or `embedding` |
-| `deployment_revision`, `prompt`, `prompt_version_number` | the use case | readable evidence for the pin that produced this call |
-| `deployment_id`, `prompt_version_id`, `model_id` | the use case | deprecated local evidence from legacy documents; schema v1 readable documents leave these empty |
+| `prompt`, `model`, `status`, `started_at` | the SDK | the four required fields besides `id` |
+| `kind` | the prompt | `chat`, `text` or `embedding` |
+| `deployment_revision`, `prompt`, `prompt_version_number` | the prompt | readable evidence for the pin that produced this call |
+| `deployment_id`, `prompt_version_id`, `model_id` | the prompt | deprecated local evidence from legacy documents; schema v1 readable documents leave these empty |
 | `source` | the store | `remote`, `disk`, `bundle` or `manual` |
-| `provider`, `model_used`, `upstream_provider` | the use case and your result | who actually served it |
-| `params` | the use case (plus `CallMeta::params`) | what the call was made with |
+| `provider`, `model_used`, `upstream_provider` | the prompt and your result | who actually served it |
+| `params` | the prompt (plus `CallMeta::params`) | what the call was made with |
 | `input` | `CallMeta` | `{variables, messages}` or `{text}`, truncated by the payload policy |
 | `output` | your `Result` | `{content, tool_calls}`, truncated by the payload policy |
 | `finish_reason`, `stop_kind` | your `Result` | `stop_kind` is normalised: `stop`, `length`, `tool_call`, `content_filter`, `other`. Only `length` means the answer was cut off |
@@ -213,7 +213,7 @@ Missing `event_id`, `observed_at`, and `sdk` are filled before sending and remai
 
 ### The payload policy
 
-Before a record is queued the SDK applies the use case's `payload_policy` from the prompt document, so raw
+Before a record is queued the SDK applies the prompt's `payload_policy` from the prompt document, so raw
 text never travels when the policy says it should not: the keep decision (sampling on a hash of the
 id; errors and `stop_kind: length` are always kept), then `none` (drop `input`/`output`), `hash`
 (replace them with `{sha256, bytes}`) or `full` (truncate to the contract's limits, UTF-8 safe),
@@ -225,7 +225,7 @@ then the 2 KB cap on `error.message`, then `hash_end_user`, then your `redact` h
 use prompton::{Client, Mode};
 
 let prompton = Client::builder().mode(Mode::Test).without_disk_cache().build()?;
-prompton.set_use_cases(&my_test_use_case_document())?;
+prompton.set_prompts(&my_test_prompt_document())?;
 
 // … exercise the code under test …
 
@@ -241,7 +241,7 @@ you want in CI.
 ## Conformance
 
 `tests/conformance/` is the cross-language contract every PromptOn SDK reproduces: template
-rendering, use-case lookup, payload truncation, `stop_kind` normalisation and golden monitoring-log
+rendering, prompt lookup, payload truncation, `stop_kind` normalisation and golden monitoring-log
 records. `cargo test` executes every **normative** case. Two qualifications, so you know exactly
 what the suite proves:
 

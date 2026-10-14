@@ -42,7 +42,7 @@ fn live_demand_contract() {
 }
 
 fn render(client: &Client, key: &str, variables: Value) -> String {
-    let use_case = client.use_case(key).expect("use_case");
-    let messages = use_case.messages(variables).expect("messages");
+    let prompt = client.prompt(key).expect("prompt");
+    let messages = prompt.messages(variables).expect("messages");
     messages.last().expect("message").content.clone()
 }

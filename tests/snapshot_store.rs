@@ -109,12 +109,12 @@ fn startup_and_idle_do_not_fetch_configuration() {
 }
 
 #[test]
-fn every_use_case_inside_the_ttl_is_served_from_memory() {
+fn every_prompt_inside_the_ttl_is_served_from_memory() {
     let server = StubServer::start(|_, _| ok_snapshot("Hello {{ name }}"));
     let client = client_for(&server, Duration::from_secs(60));
 
     for _ in 0..25 {
-        let resolution = client.use_case("greeting").expect("use_case");
+        let resolution = client.prompt("greeting").expect("prompt");
         assert_eq!(resolution.source, Source::Remote);
         assert_eq!(resolution.model.as_deref(), Some("openai/gpt-4o-mini"));
     }
@@ -124,7 +124,7 @@ fn every_use_case_inside_the_ttl_is_served_from_memory() {
         1,
         "the cache TTL must keep the SDK off the network"
     );
-    assert_eq!(client.use_case_fetch_count(), 1);
+    assert_eq!(client.prompt_fetch_count(), 1);
 }
 
 #[test]
@@ -139,7 +139,7 @@ fn concurrent_same_key_requests_share_one_fetch() {
     for _ in 0..8 {
         let client = client.clone();
         threads.push(std::thread::spawn(move || {
-            client.use_case("greeting").expect("use_case")
+            client.prompt("greeting").expect("prompt")
         }));
     }
     for thread in threads {
@@ -161,11 +161,11 @@ fn concurrent_different_keys_fetch_independently() {
 
     let greeting = {
         let client = client.clone();
-        std::thread::spawn(move || client.use_case("greeting").expect("greeting"))
+        std::thread::spawn(move || client.prompt("greeting").expect("greeting"))
     };
     let other = {
         let client = client.clone();
-        std::thread::spawn(move || client.use_case("demand_other").expect("other"))
+        std::thread::spawn(move || client.prompt("demand_other").expect("other"))
     };
 
     assert_eq!(
@@ -199,9 +199,9 @@ fn another_key_fetch_does_not_mutate_a_fresh_key() {
     });
     let client = client_for(&server, Duration::from_secs(60));
 
-    let greeting = client.use_case("greeting").expect("greeting");
-    let other = client.use_case("demand_other").expect("other");
-    let greeting_again = client.use_case("greeting").expect("greeting again");
+    let greeting = client.prompt("greeting").expect("greeting");
+    let other = client.prompt("demand_other").expect("other");
+    let greeting_again = client.prompt("greeting").expect("greeting again");
 
     assert_eq!(greeting.model.as_deref(), Some("openai/gpt-4o-mini"));
     assert_eq!(greeting_again.model, greeting.model);
@@ -223,19 +223,19 @@ fn a_refresh_after_the_ttl_is_conditional_and_a_304_changes_nothing() {
     });
 
     let client = client_for(&server, Duration::from_millis(80));
-    let first = client.use_case("greeting").expect("use_case");
+    let first = client.prompt("greeting").expect("prompt");
     assert_eq!(first.etag.as_deref(), Some(ETAG));
 
     std::thread::sleep(Duration::from_millis(400));
 
-    let later = client.use_case("greeting").expect("use_case");
+    let later = client.prompt("greeting").expect("prompt");
     assert_eq!(later.etag.as_deref(), Some(ETAG));
     assert_eq!(later.source, Source::Remote);
     assert!(
         server.request_count() >= 2,
         "the stale lookup should have refreshed at least once"
     );
-    let info = client.use_cases_info();
+    let info = client.prompts_info();
     assert!(!info.stale, "a 304 confirms the document is current");
     assert_eq!(info.failures, 0);
 }
@@ -261,13 +261,13 @@ fn a_new_document_replaces_the_old_one() {
     std::thread::sleep(Duration::from_millis(300));
     assert_eq!(rendered(&client), "Hi Ada!");
     assert_eq!(
-        client.use_cases_info().etag.as_deref(),
+        client.prompts_info().etag.as_deref(),
         Some("\"sha256-2222\"")
     );
 }
 
 fn rendered(client: &Client) -> String {
-    let resolution = client.use_case("greeting").expect("use_case");
+    let resolution = client.prompt("greeting").expect("prompt");
     resolution
         .messages(serde_json::json!({"name": "Ada"}))
         .expect("render")[0]
@@ -290,19 +290,16 @@ fn a_429_is_honoured_and_the_caller_never_sees_it() {
     });
 
     let client = client_for(&server, Duration::from_millis(50));
-    assert!(client.use_case("greeting").is_ok());
+    assert!(client.prompt("greeting").is_ok());
     std::thread::sleep(Duration::from_millis(60));
 
-    assert!(
-        client.use_case("greeting").is_ok(),
-        "the caller sees nothing"
-    );
+    assert!(client.prompt("greeting").is_ok(), "the caller sees nothing");
     assert_eq!(
         server.request_count(),
         2,
         "Retry-After must hold the SDK back: one fetch, one 429, then silence"
     );
-    let info = client.use_cases_info();
+    let info = client.prompts_info();
     assert!(info.stale);
     assert_eq!(info.failures, 1);
 }
@@ -332,7 +329,7 @@ fn repeated_5xx_backs_off_and_keeps_serving_the_previous_document() {
     let count = server.request_count();
     // 50 ms, then 50, 100, 200, 400 … — a fixed interval would have made ~10 requests by now.
     assert_eq!(count, 2, "one initial fetch and one demand failure");
-    assert!(client.use_cases_info().failures >= 1);
+    assert!(client.prompts_info().failures >= 1);
 }
 
 /// A transport that never answers in time, to prove a timeout is treated like any other failure.
@@ -370,7 +367,7 @@ impl HttpClient for SlowSuccessfulClient {
 #[test]
 fn a_slow_custom_transport_falls_back_after_one_second_and_cannot_late_overwrite() {
     let dir = support::temp_dir("slow-success");
-    let bundle = dir.join("use-cases.production.json");
+    let bundle = dir.join("prompts.production.json");
     std::fs::write(
         &bundle,
         document_json("production", "demo", "Bundle {{ name }}"),
@@ -422,7 +419,7 @@ impl HttpClient for SlowFailingClient {
 #[test]
 fn failed_fetch_gate_is_measured_from_attempt_start() {
     let dir = support::temp_dir("attempt-start");
-    let bundle = dir.join("use-cases.production.json");
+    let bundle = dir.join("prompts.production.json");
     std::fs::write(
         &bundle,
         document_json("production", "demo", "Bundle {{ name }}"),
@@ -477,11 +474,11 @@ fn per_key_disk_cache_survives_restart_with_independent_documents() {
         .build()
         .unwrap();
     assert_eq!(
-        first.use_case("greeting").unwrap().model.as_deref(),
+        first.prompt("greeting").unwrap().model.as_deref(),
         Some("openai/gpt-4o-mini")
     );
     assert_eq!(
-        first.use_case("demand_other").unwrap().model.as_deref(),
+        first.prompt("demand_other").unwrap().model.as_deref(),
         Some("openai/other-model")
     );
     drop(first);
@@ -495,8 +492,8 @@ fn per_key_disk_cache_survives_restart_with_independent_documents() {
         .log_sink(|_| {})
         .build()
         .unwrap();
-    let greeting = restarted.use_case("greeting").unwrap();
-    let other = restarted.use_case("demand_other").unwrap();
+    let greeting = restarted.prompt("greeting").unwrap();
+    let other = restarted.prompt("demand_other").unwrap();
     assert_eq!(greeting.source, Source::Disk);
     assert_eq!(other.source, Source::Disk);
     assert_eq!(greeting.model.as_deref(), Some("openai/gpt-4o-mini"));
@@ -504,9 +501,9 @@ fn per_key_disk_cache_survives_restart_with_independent_documents() {
 }
 
 #[test]
-fn a_timeout_leaves_the_bundle_in_place_and_never_fails_a_use_case_lookup() {
+fn a_timeout_leaves_the_bundle_in_place_and_never_fails_a_prompt_lookup() {
     let dir = support::temp_dir("bundle");
-    let bundle = dir.join("use-cases.production.json");
+    let bundle = dir.join("prompts.production.json");
     std::fs::write(
         &bundle,
         document_json("production", "demo", "Hi {{ name }}"),
@@ -530,10 +527,10 @@ fn a_timeout_leaves_the_bundle_in_place_and_never_fails_a_use_case_lookup() {
         .unwrap();
 
     std::thread::sleep(Duration::from_millis(250));
-    let resolution = client.use_case("greeting").expect("the bundle answers");
+    let resolution = client.prompt("greeting").expect("the bundle answers");
     assert_eq!(resolution.source, Source::Bundle);
     assert!(calls.load(Ordering::Relaxed) >= 1, "it kept trying");
-    assert!(client.use_cases_info().stale);
+    assert!(client.prompts_info().stale);
 }
 
 #[test]
@@ -553,7 +550,7 @@ fn the_tiers_are_memory_then_disk_then_bundle_then_remote() {
         .log_sink(|_| {})
         .build()
         .unwrap();
-    let resolution = client.use_case("greeting").unwrap();
+    let resolution = client.prompt("greeting").unwrap();
     assert_eq!(resolution.source, Source::Disk);
     assert_eq!(resolution.messages(()).unwrap()[0].content, "from disk");
 
@@ -567,7 +564,7 @@ fn the_tiers_are_memory_then_disk_then_bundle_then_remote() {
         .log_sink(|_| {})
         .build()
         .unwrap();
-    assert_eq!(client.use_case("greeting").unwrap().source, Source::Bundle);
+    assert_eq!(client.prompt("greeting").unwrap().source, Source::Bundle);
 
     // With neither, resolution fails with a clear message and nothing else.
     let client = Client::builder()
@@ -577,7 +574,7 @@ fn the_tiers_are_memory_then_disk_then_bundle_then_remote() {
         .log_sink(|_| {})
         .build()
         .unwrap();
-    match client.use_case("greeting") {
+    match client.prompt("greeting") {
         Err(Error::NotReady(message)) => {
             assert!(message.contains("production"), "{message}");
         }
@@ -604,18 +601,15 @@ fn schema_one_bundle_serves_readable_refs_and_legacy_ids_stay_empty() {
         .build()
         .unwrap();
 
-    let use_case = client.use_case("greeting").unwrap();
-    assert_eq!(use_case.source, Source::Bundle);
-    assert_eq!(use_case.model.as_deref(), Some("openai/gpt-4o-mini"));
-    assert_eq!(use_case.deployment_id, None);
-    assert_eq!(use_case.model_id, None);
-    assert_eq!(use_case.prompt_version_id, None);
-    assert_eq!(use_case.prompt_version_number, Some(2));
+    let prompt = client.prompt("greeting").unwrap();
+    assert_eq!(prompt.source, Source::Bundle);
+    assert_eq!(prompt.model.as_deref(), Some("openai/gpt-4o-mini"));
+    assert_eq!(prompt.deployment_id, None);
+    assert_eq!(prompt.model_id, None);
+    assert_eq!(prompt.prompt_version_id, None);
+    assert_eq!(prompt.prompt_version_number, Some(2));
     assert_eq!(
-        use_case
-            .messages(serde_json::json!({"name": "Ada"}))
-            .unwrap()[0]
-            .content,
+        prompt.messages(serde_json::json!({"name": "Ada"})).unwrap()[0].content,
         "Hello Ada"
     );
 }
@@ -639,17 +633,17 @@ fn schema_one_single_prompt_fetch_persists_original_bytes_across_disk_restart() 
         .build()
         .unwrap();
 
-    let use_case = client.use_case("greeting").unwrap();
-    assert_eq!(use_case.model.as_deref(), Some("openai/gpt-4o-mini"));
-    assert_eq!(use_case.etag.as_deref(), Some("\"single-v9\""));
-    assert_eq!(use_case.prompt_version_number, Some(2));
+    let prompt = client.prompt("greeting").unwrap();
+    assert_eq!(prompt.model.as_deref(), Some("openai/gpt-4o-mini"));
+    assert_eq!(prompt.etag.as_deref(), Some("\"single-v9\""));
+    assert_eq!(prompt.prompt_version_number, Some(2));
 
     let prompt_disk = disk
         .with_file_name("snapshot.json.prompts")
         .join("6772656574696e67.json");
     assert_eq!(std::fs::read_to_string(&prompt_disk).unwrap(), body);
 
-    client.export_use_cases(&disk).expect("export");
+    client.export_prompts(&disk).expect("export");
     assert_eq!(std::fs::read_to_string(&disk).unwrap(), body);
 
     drop(client);
@@ -660,13 +654,10 @@ fn schema_one_single_prompt_fetch_persists_original_bytes_across_disk_restart() 
         .log_sink(|_| {})
         .build()
         .unwrap();
-    let use_case = offline.use_case("greeting").unwrap();
-    assert_eq!(use_case.source, Source::Disk);
+    let prompt = offline.prompt("greeting").unwrap();
+    assert_eq!(prompt.source, Source::Disk);
     assert_eq!(
-        use_case
-            .messages(serde_json::json!({"name": "Ada"}))
-            .unwrap()[0]
-            .content,
+        prompt.messages(serde_json::json!({"name": "Ada"})).unwrap()[0].content,
         "Hello Ada"
     );
 }
@@ -685,7 +676,7 @@ fn a_document_for_another_environment_or_project_is_never_used() {
         .build()
         .unwrap();
     assert!(
-        matches!(client.use_case("greeting"), Err(Error::NotReady(_))),
+        matches!(client.prompt("greeting"), Err(Error::NotReady(_))),
         "a staging document must not answer a production process"
     );
 
@@ -699,7 +690,7 @@ fn a_document_for_another_environment_or_project_is_never_used() {
         .build()
         .unwrap();
     assert!(
-        matches!(client.use_case("greeting"), Err(Error::NotReady(_))),
+        matches!(client.prompt("greeting"), Err(Error::NotReady(_))),
         "another project's document must not answer either"
     );
 }
@@ -717,10 +708,7 @@ fn a_corrupt_or_partial_file_is_ignored_rather_than_fatal() {
         .log_sink(|_| {})
         .build()
         .unwrap();
-    assert!(matches!(
-        client.use_case("greeting"),
-        Err(Error::NotReady(_))
-    ));
+    assert!(matches!(client.prompt("greeting"), Err(Error::NotReady(_))));
 
     // A v1/v2 document is refused the same way.
     std::fs::write(&disk, br#"{"schema_version": 2, "prompts": {}}"#).unwrap();
@@ -731,10 +719,7 @@ fn a_corrupt_or_partial_file_is_ignored_rather_than_fatal() {
         .log_sink(|_| {})
         .build()
         .unwrap();
-    assert!(matches!(
-        client.use_case("greeting"),
-        Err(Error::NotReady(_))
-    ));
+    assert!(matches!(client.prompt("greeting"), Err(Error::NotReady(_))));
 }
 
 #[test]
@@ -752,8 +737,8 @@ fn export_writes_the_full_snapshot_to_disk_with_a_sidecar() {
         .log_sink(|_| {})
         .build()
         .unwrap();
-    assert!(client.use_case("greeting").is_ok());
-    client.export_use_cases(&disk).expect("export");
+    assert!(client.prompt("greeting").is_ok());
+    client.export_prompts(&disk).expect("export");
 
     let written = std::fs::read(&disk).expect("the disk cache was written");
     let document: serde_json::Value = serde_json::from_slice(&written).unwrap();
@@ -782,13 +767,13 @@ fn export_writes_the_full_snapshot_to_disk_with_a_sidecar() {
         .log_sink(|_| {})
         .build()
         .unwrap();
-    assert_eq!(offline.use_case("greeting").unwrap().source, Source::Disk);
+    assert_eq!(offline.prompt("greeting").unwrap().source, Source::Disk);
 }
 
 #[test]
 fn refresh_is_noop_and_export_writes_current_document() {
     let dir = support::temp_dir("export");
-    let bundle = dir.join("use-cases.production.json");
+    let bundle = dir.join("prompts.production.json");
     let server = StubServer::start(|_, _| ok_snapshot("Hello {{ name }}"));
 
     let client = Client::builder()
@@ -803,11 +788,11 @@ fn refresh_is_noop_and_export_writes_current_document() {
 
     client.refresh().expect("refresh is a no-op");
     assert_eq!(server.request_count(), 0);
-    assert!(client.use_case("greeting").is_ok());
+    assert!(client.prompt("greeting").is_ok());
 
-    client.export_use_cases(&bundle).expect("export");
+    client.export_prompts(&bundle).expect("export");
     assert!(bundle.exists());
-    assert!(dir.join("use-cases.production.json.meta.json").exists());
+    assert!(dir.join("prompts.production.json.meta.json").exists());
 
     let from_bundle = Client::builder()
         .mode(Mode::Offline)
@@ -818,7 +803,7 @@ fn refresh_is_noop_and_export_writes_current_document() {
         .build()
         .unwrap();
     assert_eq!(
-        from_bundle.use_case("greeting").unwrap().source,
+        from_bundle.prompt("greeting").unwrap().source,
         Source::Bundle
     );
 }
@@ -841,7 +826,7 @@ fn without_an_api_key_no_remote_call_is_made_and_it_is_said_once() {
         .build()
         .unwrap();
 
-    assert!(client.use_case("greeting").is_ok());
+    assert!(client.prompt("greeting").is_ok());
     assert_eq!(server.request_count(), 0, "no key, no remote calls");
     client.refresh().expect("refresh is a no-op without a key");
 
@@ -863,7 +848,7 @@ fn resolving_is_safe_from_many_threads_at_once() {
         let client = client.clone();
         handles.push(std::thread::spawn(move || {
             for _ in 0..200 {
-                let resolution = client.use_case("greeting").expect("use_case");
+                let resolution = client.prompt("greeting").expect("prompt");
                 assert_eq!(
                     resolution.deployment_revision,
                     Some("v2026.09.30-3".to_string())
@@ -877,7 +862,7 @@ fn resolving_is_safe_from_many_threads_at_once() {
 }
 
 #[test]
-fn without_the_poller_a_stale_use_case_lookup_refreshes_on_demand() {
+fn without_the_poller_a_stale_prompt_lookup_refreshes_on_demand() {
     let server = StubServer::start(|_, index| {
         if index == 0 {
             ok_snapshot("Hello {{ name }}")
@@ -907,7 +892,7 @@ fn without_the_poller_a_stale_use_case_lookup_refreshes_on_demand() {
     );
 
     std::thread::sleep(Duration::from_millis(80));
-    // The stale use_case call performs the refresh before resolving.
+    // The stale prompt call performs the refresh before resolving.
     assert_eq!(rendered(&client), "Hi Ada!");
     assert_eq!(
         server.request_count(),
@@ -938,7 +923,7 @@ fn fetch_uses_current_prompts_endpoint_and_prompt_document_shape() {
         .log_sink(|_| {})
         .build()
         .expect("client");
-    let resolution = client.use_case("greeting").expect("use_case");
+    let resolution = client.prompt("greeting").expect("prompt");
     assert_eq!(resolution.model.as_deref(), Some("openai/gpt-4o-mini"));
-    assert!(!resolution.prompt_names.is_empty());
+    assert!(!resolution.template_names.is_empty());
 }
