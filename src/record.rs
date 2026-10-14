@@ -187,8 +187,8 @@ pub struct LogRecord {
     /// `chat`, `text` or `embedding`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub kind: Option<String>,
-    /// The deployment revision that resolved this call.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    /// The deployment id retained for local evidence. It is not sent in log requests.
+    #[serde(default, skip_serializing)]
     pub deployment_id: Option<String>,
     /// That revision's UTC-date label.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -201,11 +201,14 @@ pub struct LogRecord {
         skip_serializing_if = "Option::is_none"
     )]
     pub prompt: Option<String>,
-    /// The pinned prompt version.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    /// The pinned prompt version id retained for local evidence. It is not sent in log requests.
+    #[serde(default, skip_serializing)]
     pub prompt_version_id: Option<String>,
-    /// The catalog id of the model.
+    /// The pinned prompt version number.
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub prompt_version_number: Option<i64>,
+    /// The catalog id retained for local evidence. It is not sent in log requests.
+    #[serde(default, skip_serializing)]
     pub model_id: Option<String>,
     /// Which tier the configuration came from.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -277,6 +280,7 @@ impl LogRecord {
             deployment_revision: None,
             prompt: None,
             prompt_version_id: None,
+            prompt_version_number: None,
             model_id: None,
             source: None,
             provider: None,
@@ -333,6 +337,9 @@ impl LogRecord {
         }
         if self.prompt_version_id.is_none() {
             self.prompt_version_id = resolution.prompt_version_id.clone();
+        }
+        if self.prompt_version_number.is_none() {
+            self.prompt_version_number = resolution.prompt_version_number;
         }
         if self.provider.is_none() {
             self.provider = resolution.provider.clone();
@@ -832,5 +839,20 @@ mod tests {
         assert!(!map.contains_key("output"));
         assert_eq!(map["status"], Value::String("ok".to_string()));
         assert_eq!(map["sdk"]["name"], Value::String(SDK_NAME.to_string()));
+    }
+
+    #[test]
+    fn omits_retired_resource_references() {
+        let mut record = LogRecord::new("greeting", "m", Status::Ok);
+        record.deployment_id = Some("0198f2a1-0000-7000-8000-00000000d001".to_string());
+        record.prompt_version_id = Some("0198f2a1-0000-7000-8000-00000000a001".to_string());
+        record.model_id = Some("0198f2a1-0000-7000-8000-00000000e001".to_string());
+        record.prompt_version_number = Some(2);
+
+        let map = record.to_map();
+        assert!(!map.contains_key("deployment_id"));
+        assert!(!map.contains_key("prompt_version_id"));
+        assert!(!map.contains_key("model_id"));
+        assert_eq!(map["prompt_version_number"], Value::from(2));
     }
 }

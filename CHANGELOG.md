@@ -4,8 +4,11 @@ All notable changes to `prompton-sdk` are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the crate follows
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
-## Unreleased
+## 0.6.0 - Unreleased
 
+- Breaking request contract: monitoring logs now send readable prompt evidence only: `deployment_revision`,
+  `prompt`, and `prompt_version_number`. `deployment_id`, `prompt_version_id`, and `model_id`
+  remain local response/cache evidence but are no longer emitted in log requests.
 - Suppress routine closed transport generation logs and completion trace events for
   `%Req.TransportError{reason: :closed}` while preserving retries, callbacks and other errors.
 

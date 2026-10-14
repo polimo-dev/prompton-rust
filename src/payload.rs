@@ -58,7 +58,14 @@ pub fn apply(
     let record = apply_mode(record, &policy);
     let record = cap_error_message(record);
     let record = hash_end_user(record, config);
-    redact(record, config)
+    scrub_retired_log_refs(redact(record, config))
+}
+
+pub(crate) fn scrub_retired_log_refs(mut record: Map<String, Value>) -> Map<String, Value> {
+    record.remove("deployment_id");
+    record.remove("prompt_version_id");
+    record.remove("model_id");
+    record
 }
 
 /// Merges a use-case document policy with the SDK defaults and clamps the values.

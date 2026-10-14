@@ -400,6 +400,70 @@ fn redaction_runs_last_and_end_user_refs_can_be_hashed() {
 }
 
 #[test]
+fn final_scrub_removes_retired_refs_added_by_redaction_before_capture_send_and_retry() {
+    fn assert_clean(record: &serde_json::Map<String, Value>) {
+        for key in ["deployment_id", "prompt_version_id", "model_id"] {
+            assert!(
+                record.get(key).is_none(),
+                "{key} must be scrubbed after redaction: {}",
+                Value::Object(record.clone())
+            );
+        }
+    }
+
+    let add_retired = |mut value: Value| {
+        value["deployment_id"] = json!("0198f2a1-0000-7000-8000-00000000d001");
+        value["prompt_version_id"] = json!("0198f2a1-0000-7000-8000-00000000a001");
+        value["model_id"] = json!("0198f2a1-0000-7000-8000-00000000e001");
+        value
+    };
+
+    let captured = Client::builder()
+        .mode(Mode::Test)
+        .environment("production")
+        .without_disk_cache()
+        .redact(add_retired)
+        .log_sink(|_| {})
+        .build()
+        .unwrap();
+    captured.log(record("greeting")).unwrap();
+    assert_clean(&captured.captured_logs()[0]);
+
+    let server = StubServer::start(|_, index| {
+        if index == 0 {
+            StubResponse::json(429, r#"{"error":{"code":"rate_limited","message":"slow"}}"#)
+                .with_header("retry-after", "1")
+        } else {
+            StubResponse::json(202, r#"{"accepted":1,"duplicates":0,"rejected":[]}"#)
+        }
+    });
+    let sent = quiet_builder(&server)
+        .log_config(LogConfig {
+            flush_size: 1,
+            flush_interval: Duration::from_millis(50),
+            ..LogConfig::default()
+        })
+        .redact(add_retired)
+        .build()
+        .unwrap();
+    sent.log(record("greeting")).unwrap();
+
+    let deadline = Instant::now() + Duration::from_secs(4);
+    while server.request_count() < 2 && Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(25));
+    }
+
+    let requests = server.requests();
+    assert_eq!(
+        requests.len(),
+        2,
+        "the scrubbed record should be sent and retried once"
+    );
+    assert_clean(logs(&requests[0])[0].as_object().unwrap());
+    assert_clean(logs(&requests[1])[0].as_object().unwrap());
+}
+
+#[test]
 fn closed_transport_generation_logs_are_suppressed_before_redaction() {
     let redacted = Arc::new(AtomicUsize::new(0));
     let counter = redacted.clone();

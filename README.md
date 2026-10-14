@@ -25,7 +25,7 @@ The crate is not on crates.io yet, so depend on the repository:
 prompton-sdk = { git = "https://github.com/polimo-dev/prompton-rust", branch = "main" }
 ```
 
-Once it is published, the line becomes `prompton-sdk = "0.5.1"`. The crate is `prompton-sdk`; the
+Once it is published, the line becomes `prompton-sdk = "0.6.0"`. The crate is `prompton-sdk`; the
 library you import is `prompton`. Rust 1.85 or newer.
 
 ## Message ownership
@@ -172,7 +172,8 @@ keys, no `PTN_API_KEY`, no user PII beyond `end_user_ref`.
 | `id` | the SDK | a UUIDv7, generated before the call; the idempotency key. A resend is counted as a duplicate, never stored twice |
 | `use_case`, `model`, `status`, `started_at` | the SDK | the four required fields besides `id` |
 | `kind` | the use case | `chat`, `text` or `embedding` |
-| `deployment_id`, `deployment_revision`, `prompt`, `prompt_version_id` | the use case | which pin produced this call |
+| `deployment_revision`, `prompt`, `prompt_version_number` | the use case | readable evidence for the pin that produced this call |
+| `deployment_id`, `prompt_version_id`, `model_id` | the use case | local response/cache evidence; not emitted in monitoring log requests |
 | `source` | the store | `remote`, `disk`, `bundle` or `manual` |
 | `provider`, `model_used`, `upstream_provider` | the use case and your result | who actually served it |
 | `params` | the use case (plus `CallMeta::params`) | what the call was made with |
